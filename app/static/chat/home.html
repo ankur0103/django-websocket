@@ -1,0 +1,76 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Chat Home</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            max-width: 800px;
+            margin: 0 auto;
+            padding: 20px;
+        }
+        .container {
+            border: 1px solid #ccc;
+            padding: 20px;
+            margin: 20px 0;
+            border-radius: 5px;
+        }
+        .endpoint {
+            background-color: #f8f9fa;
+            padding: 10px;
+            border-radius: 3px;
+            font-family: monospace;
+            margin: 10px 0;
+        }
+        .link {
+            color: #007bff;
+            text-decoration: none;
+        }
+        .link:hover {
+            text-decoration: underline;
+        }
+    </style>
+</head>
+<body>
+    <h1>Django WebSocket Chat</h1>
+    
+    <div class="container">
+        <h2>Available Endpoints</h2>
+        <div class="endpoint">
+            <strong>WebSocket:</strong> ws://localhost:8000/ws/chat/
+        </div>
+        <div class="endpoint">
+            <strong>Test Page:</strong> <a href="/test/" class="link">http://localhost:8000/test/</a>
+        </div>
+        <div class="endpoint">
+            <strong>WebSocket Info:</strong> <a href="/chat/info" class="link">http://localhost:8000/chat/info</a>
+        </div>
+        <div class="endpoint">
+            <strong>Health Check:</strong> <a href="/healthz" class="link">http://localhost:8000/healthz</a>
+        </div>
+    </div>
+    
+    <div class="container">
+        <h2>Quick Test</h2>
+        <p>Click the link below to test the WebSocket functionality:</p>
+        <a href="/test/" class="link">🚀 Open WebSocket Test Page</a>
+    </div>
+    
+    <div class="container">
+        <h2>Message Format</h2>
+        <h3>Send Message:</h3>
+        <pre>{"message": "Hello World"}</pre>
+        
+        <h3>Receive Response:</h3>
+        <pre>{"count": 1}</pre>
+        
+        <h3>Heartbeat (every 30 seconds):</h3>
+        <pre>{"ts": "2024-01-01T12:00:00Z"}</pre>
+        
+        <h3>Goodbye (on disconnect):</h3>
+        <pre>{"bye": true, "total": 5}</pre>
+    </div>
+</body>
+</html> 

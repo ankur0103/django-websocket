@@ -1,0 +1,157 @@
+version: '3.8'
+
+services:
+  redis:
+    image: redis:7-alpine
+    ports:
+      - "6379:6379"
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+
+  app_blue:
+    build:
+      context: ../
+      dockerfile: docker/Dockerfile
+    environment:
+      - DEBUG=False
+      - SECRET_KEY=your-secret-key-here
+      - REDIS_URL=redis://redis:6379/0
+      - COLOR=blue
+      - WS_BASE_URL=ws://localhost
+    depends_on:
+      redis:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/healthz"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+    # Concurrency tuning:
+    # - 4 uvicorn workers for CPU parallelism (1 worker per CPU core)
+    # - uvloop event loop for 2-4x performance improvement
+    # - Async WebSocket consumers for I/O-bound operations
+    # - Thread pool for CPU-bound operations (database queries, etc.)
+    # - Connection capacity: 500-2000 per worker (varies by hardware)
+    # - Total capacity: 2000-8000 concurrent connections (4 workers)
+    # - Redis channel layer for inter-worker communication
+    # - Use scripts/capacity_test.py to determine actual limits
+    deploy:
+      resources:
+        limits:
+          memory: 1G
+          cpus: '1.0'
+        reservations:
+          cpus: '0.5'
+          memory: 512M
+
+  app_green:
+    build:
+      context: ../
+      dockerfile: docker/Dockerfile
+    environment:
+      - DEBUG=False
+      - SECRET_KEY=your-secret-key-here
+      - REDIS_URL=redis://redis:6379/0
+      - COLOR=green
+      - WS_BASE_URL=ws://localhost
+    depends_on:
+      redis:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/healthz"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+    # Concurrency tuning (same as app_blue):
+    # - 4 uvicorn workers for CPU parallelism (1 worker per CPU core)
+    # - uvloop event loop for 2-4x performance improvement
+    # - Async WebSocket consumers for I/O-bound operations
+    # - Thread pool for CPU-bound operations (database queries, etc.)
+    # - Connection capacity: 500-2000 per worker (varies by hardware)
+    # - Total capacity: 2000-8000 concurrent connections (4 workers)
+    # - Redis channel layer for inter-worker communication
+    # - Use scripts/capacity_test.py to determine actual limits
+    deploy:
+      resources:
+        limits:
+          memory: 1G
+          cpus: '1.0'
+        reservations:
+          cpus: '0.5'
+          memory: 512M
+
+  nginx:
+    image: nginx:alpine
+    ports:
+      - "80:80"
+    volumes:
+      - ./nginx/nginx.conf:/etc/nginx/nginx.conf:ro
+    depends_on:
+      - app_blue
+      - app_green
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost/healthz"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+
+  prometheus:
+    image: prom/prometheus:latest
+    ports:
+      - "9090:9090"
+    volumes:
+      - ../monitoring/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - ../monitoring/alerting/rules.yml:/etc/prometheus/rules.yml:ro
+    command:
+      - '--config.file=/etc/prometheus/prometheus.yml'
+      - '--storage.tsdb.path=/prometheus'
+      - '--web.console.libraries=/etc/prometheus/console_libraries'
+      - '--web.console.templates=/etc/prometheus/consoles'
+      - '--storage.tsdb.retention.time=200h'
+      - '--web.enable-lifecycle'
+
+  grafana:
+    image: grafana/grafana:latest
+    ports:
+      - "3000:3000"
+    environment:
+      - GF_SECURITY_ADMIN_PASSWORD=admin
+      - GF_INSTALL_PLUGINS=grafana-clock-panel,grafana-simple-json-datasource
+    volumes:
+      - grafana-storage:/var/lib/grafana
+      - ../monitoring/grafana/dashboards:/etc/grafana/provisioning/dashboards:ro
+      - ../monitoring/grafana/datasources:/etc/grafana/provisioning/datasources:ro
+      - ../monitoring/grafana/datasources/datasource-provider.yml:/etc/grafana/provisioning/datasources/datasource-provider.yml:ro
+
+  loki:
+    image: grafana/loki:latest
+    ports:
+      - "3100:3100"
+    command: -config.file=/etc/loki/local-config.yaml
+    volumes:
+      - ../monitoring/loki-config.yaml:/etc/loki/local-config.yaml:ro
+      - loki-data:/loki
+      - loki-wal:/wal
+
+  promtail:
+    image: grafana/promtail:latest
+    ports:
+      - "9080:9080"
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+      - ../monitoring/promtail-config.yaml:/etc/promtail/config.yml:ro
+    command: -config.file=/etc/promtail/config.yml
+    depends_on:
+      - loki
+
+volumes:
+  grafana-storage:
+  loki-data:
+  loki-wal:
+
+networks:
+  default:
+    driver: bridge

@@ -1,0 +1,29 @@
+# Core Django and WebSocket dependencies
+Django==4.2.7
+channels==4.0.0
+channels-redis==4.1.0
+redis==5.0.1
+
+# ASGI server with performance optimizations
+uvicorn[standard]==0.24.0
+uvloop==0.19.0
+
+# WebSocket client for load testing
+websockets==12.0
+
+# Observability and monitoring
+prometheus-client==0.19.0
+python-json-logger==2.0.7
+structlog==23.2.0
+
+# Testing framework
+pytest==7.4.3
+pytest-asyncio==0.21.1
+pytest-django==4.7.0
+
+# Load testing
+locust==2.17.0
+
+# Additional utilities
+asgiref==3.7.2
+daphne==4.0.0

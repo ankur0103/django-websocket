@@ -1,0 +1,56 @@
+groups:
+  - name: django-websocket
+    rules:
+      - alert: NoActiveConnections
+        expr: websocket_connections_active == 0
+        for: 60s
+        labels:
+          severity: warning
+        annotations:
+          summary: "No active WebSocket connections"
+          description: "No active WebSocket connections for more than 60 seconds"
+
+      - alert: HighErrorRate
+        expr: rate(websocket_errors_total[5m]) > 0.1
+        for: 30s
+        labels:
+          severity: critical
+        annotations:
+          summary: "High WebSocket error rate"
+          description: "WebSocket error rate is {{ $value }} errors per second"
+
+      - alert: HighLatency
+        expr: histogram_quantile(0.95, websocket_message_duration_seconds) > 1
+        for: 30s
+        labels:
+          severity: warning
+        annotations:
+          summary: "High WebSocket message latency"
+          description: "95th percentile latency is {{ $value }} seconds"
+
+      - alert: ServiceDown
+        expr: up == 0
+        for: 30s
+        labels:
+          severity: critical
+        annotations:
+          summary: "Service is down"
+          description: "Service {{ $labels.instance }} is down"
+
+      - alert: HighMemoryUsage
+        expr: (node_memory_MemTotal_bytes - node_memory_MemAvailable_bytes) / node_memory_MemTotal_bytes > 0.9
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "High memory usage"
+          description: "Memory usage is {{ $value | humanizePercentage }}"
+
+      - alert: HighCPUUsage
+        expr: 100 - (avg by(instance) (irate(node_cpu_seconds_total{mode="idle"}[5m])) * 100) > 80
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "High CPU usage"
+          description: "CPU usage is {{ $value }}%" 

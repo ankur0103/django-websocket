@@ -1,0 +1,343 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>WebSocket Test</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            max-width: 800px;
+            margin: 0 auto;
+            padding: 20px;
+        }
+        .container {
+            border: 1px solid #ccc;
+            padding: 20px;
+            margin: 20px 0;
+            border-radius: 5px;
+        }
+        .status {
+            padding: 10px;
+            margin: 10px 0;
+            border-radius: 3px;
+        }
+        .connected { background-color: #d4edda; color: #155724; }
+        .disconnected { background-color: #f8d7da; color: #721c24; }
+        .message { background-color: #d1ecf1; color: #0c5460; }
+        .error { background-color: #f8d7da; color: #721c24; }
+        .heartbeat { background-color: #fff3cd; color: #856404; }
+        .goodbye { background-color: #d1ecf1; color: #0c5460; font-weight: bold; }
+        .disconnected { background-color: #f8d7da; color: #721c24; }
+        #messageLog {
+            height: 300px;
+            overflow-y: auto;
+            border: 1px solid #ccc;
+            padding: 10px;
+            background-color: #f8f9fa;
+            font-family: monospace;
+            font-size: 12px;
+        }
+        input, button {
+            padding: 8px;
+            margin: 5px;
+        }
+        button {
+            background-color: #007bff;
+            color: white;
+            border: none;
+            border-radius: 3px;
+            cursor: pointer;
+        }
+        button:hover {
+            background-color: #0056b3;
+        }
+        button:disabled {
+            background-color: #6c757d;
+            cursor: not-allowed;
+        }
+        .stats {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+            gap: 10px;
+            margin: 20px 0;
+        }
+        .stat {
+            background-color: #f8f9fa;
+            padding: 10px;
+            border-radius: 3px;
+            text-align: center;
+        }
+        .stat-value {
+            font-size: 24px;
+            font-weight: bold;
+            color: #007bff;
+        }
+
+    </style>
+</head>
+<body>
+    <h1>Django WebSocket Test</h1>
+    
+    <div class="container">
+        <h2>Connection</h2>
+        <div id="status" class="status disconnected">Disconnected</div>
+        
+        <div>
+            <input type="text" id="sessionUuid" placeholder="Session UUID (optional)" />
+            <button id="connectBtn" onclick="connect()">Connect</button>
+            <button id="disconnectBtn" onclick="disconnect()" disabled>Disconnect</button>
+        </div>
+        <div>
+            <small>Current Session: <span id="currentSession">None</span></small>
+        </div>
+    </div>
+    
+    <div class="container">
+        <h2>Statistics</h2>
+        <div class="stats">
+            <div class="stat">
+                <div class="stat-value" id="messageCount">0</div>
+                <div>Messages Sent</div>
+            </div>
+            <div class="stat">
+                <div class="stat-value" id="heartbeatCount">0</div>
+                <div>Heartbeats</div>
+            </div>
+            <div class="stat">
+                <div class="stat-value" id="errorCount">0</div>
+                <div>Errors</div>
+            </div>
+            <div class="stat">
+                <div class="stat-value" id="uptime">0s</div>
+                <div>Uptime</div>
+            </div>
+        </div>
+    </div>
+    
+    <div class="container">
+        <h2>Send Message</h2>
+        <div>
+            <input type="text" id="messageInput" placeholder="Enter message" />
+            <button onclick="sendMessage()" id="sendBtn" disabled>Send</button>
+        </div>
+    </div>
+    
+    <div class="container">
+        <h2>Message Log</h2>
+        <div id="messageLog"></div>
+        <button onclick="clearLog()">Clear Log</button>
+    </div>
+
+    <script>
+        // Configuration from Django settings
+        const CONFIG = {
+            WS_URL: '{{ ws_base_url }}',
+            HEARTBEAT_INTERVAL: 30
+        };
+
+        let ws = null;
+        let messageCount = 0;
+        let heartbeatCount = 0;
+        let errorCount = 0;
+        let startTime = null;
+        let uptimeInterval = null;
+        let currentSessionUuid = null;
+
+        function log(message, type = 'message') {
+            const log = document.getElementById('messageLog');
+            const timestamp = new Date().toLocaleTimeString();
+            const logEntry = document.createElement('div');
+            logEntry.className = type;
+            logEntry.textContent = `[${timestamp}] ${message}`;
+            log.appendChild(logEntry);
+            log.scrollTop = log.scrollHeight;
+        }
+
+        function updateStats() {
+            document.getElementById('messageCount').textContent = messageCount;
+            document.getElementById('heartbeatCount').textContent = heartbeatCount;
+            document.getElementById('errorCount').textContent = errorCount;
+            
+            if (startTime) {
+                const uptime = Math.floor((Date.now() - startTime) / 1000);
+                document.getElementById('uptime').textContent = uptime + 's';
+            }
+        }
+
+        function connect() {
+            let sessionUuid = document.getElementById('sessionUuid').value;
+            
+            // If no session UUID in input, check URL parameters
+            if (!sessionUuid) {
+                const urlParams = new URLSearchParams(window.location.search);
+                sessionUuid = urlParams.get('session_uuid');
+            }
+            
+            const url = sessionUuid ? 
+                `${CONFIG.WS_URL}/ws/chat/?session_uuid=${sessionUuid}` : 
+                `${CONFIG.WS_URL}/ws/chat/`;
+            
+            // Debug: Log the URL being used
+            console.log('CONFIG.WS_URL:', CONFIG.WS_URL);
+            console.log('Connecting to WebSocket URL:', url);
+            console.log('WebSocket readyState before connection:', ws ? ws.readyState : 'no ws object');
+            
+            try {
+                ws = new WebSocket(url);
+                
+                ws.onopen = function(event) {
+                    console.log('WebSocket onopen event:', event);
+                    document.getElementById('status').textContent = 'Connected';
+                    document.getElementById('status').className = 'status connected';
+                    document.getElementById('connectBtn').disabled = true;
+                    document.getElementById('disconnectBtn').disabled = false;
+                    document.getElementById('sendBtn').disabled = false;
+                    document.getElementById('messageInput').disabled = false;
+                    
+                    // Store and display current session UUID
+                    if (sessionUuid) {
+                        currentSessionUuid = sessionUuid;
+                        document.getElementById('currentSession').textContent = sessionUuid;
+                    } else {
+                        // For new connections, we'll get the session UUID from the server response
+                        // This will be updated when we receive the first message
+                        document.getElementById('currentSession').textContent = 'New session';
+                    }
+                    
+                    startTime = Date.now();
+                    uptimeInterval = setInterval(updateStats, 1000);
+                    
+                    log('WebSocket connected', 'connected');
+                };
+                
+                ws.onmessage = function(event) {
+                    console.log('WebSocket onmessage event:', event.data);
+                    try {
+                        const data = JSON.parse(event.data);
+                        
+                        if (data.count !== undefined) {
+                            log(`Received: count = ${data.count}`, 'message');
+                        } else if (data.ts !== undefined) {
+                            heartbeatCount++;
+                            log(`Heartbeat: ${data.ts}`, 'heartbeat');
+                        } else if (data.session_uuid) {
+                            // Store session UUID from server
+                            currentSessionUuid = data.session_uuid;
+                            document.getElementById('currentSession').textContent = data.session_uuid;
+                            log(`Session UUID: ${data.session_uuid}`, 'session');
+                        } else if (data.bye !== undefined) {
+                            log(`{"bye": true, "total": ${data.total}}`, 'goodbye');
+                            console.log('Goodbye message received:', data);
+                        } else if (data.error !== undefined) {
+                            errorCount++;
+                            log(`Error: ${data.error}`, 'error');
+                        } else {
+                            log(`Unknown message: ${JSON.stringify(data)}`, 'message');
+                        }
+                        
+                        updateStats();
+                    } catch (e) {
+                        errorCount++;
+                        log(`Failed to parse message: ${event.data}`, 'error');
+                        updateStats();
+                    }
+                };
+                
+                ws.onclose = function(event) {
+                    console.log('WebSocket onclose event:', event);
+                    document.getElementById('status').textContent = 'Disconnected';
+                    document.getElementById('status').className = 'status disconnected';
+                    document.getElementById('connectBtn').disabled = false;
+                    document.getElementById('disconnectBtn').disabled = true;
+                    document.getElementById('sendBtn').disabled = true;
+                    document.getElementById('messageInput').disabled = true;
+                    
+                    // Clear current session display on disconnect
+                    document.getElementById('currentSession').textContent = 'None';
+                    currentSessionUuid = null;
+                    
+                    if (uptimeInterval) {
+                        clearInterval(uptimeInterval);
+                        uptimeInterval = null;
+                    }
+                    
+                    // Log different close scenarios
+                    if (event.code === 1000) {
+                        // Normal closure (user-initiated)
+                        log(`WebSocket closed: Normal closure`, 'disconnected');
+                    } else if (event.code === 1001) {
+                        // Going away (server shutdown)
+                        log(`WebSocket closed: Server shutdown`, 'disconnected');
+                    } else if (event.code === 1006) {
+                        // Abnormal closure (connection lost)
+                        log(`WebSocket closed: Connection lost`, 'disconnected');
+                    } else {
+                        // Other close codes
+                        log(`WebSocket closed: code=${event.code}, reason=${event.reason}`, 'disconnected');
+                    }
+                };
+                
+                ws.onerror = function(error) {
+                    console.log('WebSocket onerror event:', error);
+                    errorCount++;
+                    log(`WebSocket error: ${error}`, 'error');
+                    updateStats();
+                };
+                
+            } catch (error) {
+                errorCount++;
+                log(`Connection error: ${error}`, 'error');
+                updateStats();
+            }
+        }
+
+        function disconnect() {
+            if (ws && ws.readyState === WebSocket.OPEN) {
+                // For user-initiated disconnect, send action first
+                ws.send(JSON.stringify({ "action": "disconnect" }));
+                
+                // Wait a moment for the server to send goodbye message, then close
+                setTimeout(() => {
+                    if (ws) {
+                        ws.close(1000, "User disconnected");
+                        ws = null;
+                    }
+                }, 500); // Wait 500ms for server response
+            }
+        }
+
+
+
+        function sendMessage() {
+            const input = document.getElementById('messageInput');
+            const message = input.value.trim();
+            
+            if (message && ws && ws.readyState === WebSocket.OPEN) {
+                const data = { message: message };
+                ws.send(JSON.stringify(data));
+                messageCount++;
+                log(`Sent: ${message}`, 'message');
+                input.value = '';
+                updateStats();
+            }
+        }
+
+        function clearLog() {
+            document.getElementById('messageLog').innerHTML = '';
+        }
+
+
+
+        // Allow Enter key to send message
+        document.getElementById('messageInput').addEventListener('keypress', function(e) {
+            if (e.key === 'Enter') {
+                sendMessage();
+            }
+        });
+
+        // Update stats every second
+        setInterval(updateStats, 1000);
+    </script>
+</body>
+</html> 

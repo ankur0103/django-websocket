@@ -1,0 +1,114 @@
+name: CI/CD Pipeline
+
+on:
+  push:
+    branches: [ main, develop ]
+  pull_request:
+    branches: [ main ]
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    
+    services:
+      redis:
+        image: redis:7-alpine
+        ports:
+          - 6379:6379
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+
+    - name: Set up Python
+      uses: actions/setup-python@v4
+      with:
+        python-version: '3.11'
+
+    - name: Install dependencies
+      run: |
+        python -m pip install --upgrade pip
+        pip install -r requirements.txt
+
+    - name: Run Django migrations
+      run: |
+        cd app
+        python manage.py migrate
+      env:
+        DEBUG: "True"
+        SECRET_KEY: "test-secret-key"
+        REDIS_URL: "redis://localhost:6379/0"
+
+    - name: Run pytest
+      run: |
+        cd app
+        python -m pytest chat/tests.py -v --tb=short
+      env:
+        DEBUG: "True"
+        SECRET_KEY: "test-secret-key"
+        REDIS_URL: "redis://localhost:6379/0"
+
+    - name: Start services for monitoring test
+      run: |
+        docker-compose -f docker/compose.yml up -d redis
+        sleep 10
+        docker-compose -f docker/compose.yml up -d app_blue
+        sleep 15
+
+    - name: Run monitoring script for 20 seconds
+      run: |
+        timeout 25s ./scripts/monitor.sh --duration 20 || true
+
+    - name: Collect logs and artifacts
+      if: always()
+      run: |
+        mkdir -p artifacts
+        docker-compose -f docker/compose.yml logs > artifacts/docker-logs.txt
+        curl -s http://localhost/metrics > artifacts/metrics.txt || echo "Metrics endpoint not available" > artifacts/metrics.txt
+        curl -s http://localhost/healthz > artifacts/healthz.txt || echo "Health endpoint not available" > artifacts/healthz.txt
+        curl -s http://localhost/readyz > artifacts/readyz.txt || echo "Ready endpoint not available" > artifacts/readyz.txt
+
+    - name: Upload artifacts
+      if: always()
+      uses: actions/upload-artifact@v3
+      with:
+        name: test-artifacts
+        path: artifacts/
+
+    - name: Cleanup
+      if: always()
+      run: |
+        docker-compose -f docker/compose.yml down -v
+
+  build-and-deploy:
+    needs: test
+    runs-on: ubuntu-latest
+    if: github.ref == 'refs/heads/main'
+    
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+
+    - name: Build Docker images
+      run: |
+        docker-compose -f docker/compose.yml build
+
+    - name: Test Docker images
+      run: |
+        docker-compose -f docker/compose.yml up -d
+        sleep 30
+        curl -f http://localhost/healthz
+        curl -f http://localhost/readyz
+        curl -f http://localhost/metrics
+        docker-compose -f docker/compose.yml down
+
+    - name: Deploy to staging (placeholder)
+      run: |
+        echo "Deploying to staging environment..."
+        # Add your deployment logic here
+        # Example: docker-compose -f docker/compose.yml -f docker/compose.staging.yml up -d 
