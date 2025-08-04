@@ -185,7 +185,22 @@ test:
 # Development mode
 dev:
 	@echo "Starting development mode..."
-	cd app && uvicorn app.asgi:application --host 0.0.0.0 --port 8000 --workers 8 --backlog 10000 --limit-concurrency 2000 --loop uvloop
+	cd app && uvicorn app.asgi:application --host 0.0.0.0 --port 8000 --workers 16 --backlog 20000 --limit-concurrency 6000 --loop uvloop --worker-connections 1000
+
+
+
+# Optimize system for 5000+ connections
+optimize:
+	@echo "Optimizing system for 5000+ WebSocket connections..."
+	./scripts/optimize_system.sh
+
+# Run optimized load test
+load-test-5k:
+	@echo "Running optimized 5000 connection load test..."
+	./scripts/optimize_system.sh
+	python scripts/load_test.py --connections 5000 --messages 1 --interval 0
+
+
 
 # Install dependencies
 install:

@@ -19,6 +19,7 @@ RUN pip install --no-cache-dir -r requirements.txt
 
 # Copy project
 COPY app/ .
+COPY scripts/ scripts/
 
 # Create non-root user
 RUN useradd --create-home --shell /bin/bash app && chown -R app:app /app
@@ -31,8 +32,10 @@ EXPOSE 8000
 HEALTHCHECK --interval=30s --timeout=10s --start-period=5s --retries=3 \
     CMD curl -f http://localhost:8000/healthz || exit 1
 
-# Run the application with optimized concurrency settings
-# --workers 4: CPU parallelism (1 worker per CPU core for I/O-bound workloads)
+# Run the application with optimized concurrency settings for 5000+ connections
+# --workers 16: Optimized worker count for high concurrency
+# --backlog 20000: Large connection queue for handling bursts
+# --limit-concurrency 6000: Maximum concurrent connections per process
 # --loop uvloop: 2-4x performance improvement over asyncio
-# --worker-class uvicorn.workers.UvicornWorker: Optimized for ASGI
-CMD ["uvicorn", "app.asgi:application", "--host", "0.0.0.0", "--port", "8000", "--workers", "4", "--loop", "uvloop"]
+# --worker-connections 1000: Connections per worker process
+CMD ["uvicorn", "app.asgi:application", "--host", "0.0.0.0", "--port", "8000", "--workers", "16", "--backlog", "20000", "--limit-concurrency", "6000", "--loop", "uvloop", "--worker-connections", "1000"]

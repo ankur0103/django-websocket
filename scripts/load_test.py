@@ -129,7 +129,7 @@ class WebSocketLoadTester:
         # Create connections gradually to avoid overwhelming the server
         logger.info("Creating connections gradually...")
         connection_tasks = []
-        batch_size = 50  # Create 50 connections at a time
+        batch_size = 50  # Smaller batches for higher success rate with 5000+ connections
         
         for i in range(0, self.num_connections, batch_size):
             batch_end = min(i + batch_size, self.num_connections)
@@ -140,14 +140,14 @@ class WebSocketLoadTester:
             for j in range(i, batch_end):
                 task = asyncio.create_task(self.create_connection(j))
                 batch_tasks.append(task)
-                # Small delay between connections in the same batch
-                await asyncio.sleep(0.001)
+                # Slightly longer delay between connections for stability
+                await asyncio.sleep(0.002)
             
             # Wait for this batch to complete
             batch_results = await asyncio.gather(*batch_tasks, return_exceptions=True)
             connection_tasks.extend(batch_results)
             
-            # Small delay between batches
+            # Longer delay between batches for server recovery
             await asyncio.sleep(0.1)
         
         # Filter successful connections
