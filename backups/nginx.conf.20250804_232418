@@ -3,13 +3,13 @@ events {
 }
 
 http {
-    upstream app_blue {
-        server app_blue:8000 max_fails=3 fail_timeout=30s;
+    upstream app_green {
+        server app_green:8000 max_fails=3 fail_timeout=30s;
     }
 
-    # Default to blue
+    # Default to green
     upstream app_active {
-        server app_blue:8000 max_fails=3 fail_timeout=30s;
+        server app_green:8000 max_fails=3 fail_timeout=30s;
     }
 
     # Rate limiting
@@ -95,7 +95,7 @@ http {
             proxy_set_header X-Request-ID $http_x_request_id;
             proxy_read_timeout 86400;
             proxy_send_timeout 86400;
-            limit_req zone=websocket burst=20 nodelay;
+            # limit_req zone=websocket burst=20 nodelay;
         }
 
         # Admin interface

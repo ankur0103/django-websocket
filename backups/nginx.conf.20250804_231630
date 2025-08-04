@@ -1,5 +1,7 @@
+worker_processes auto;
+
 events {
-    worker_connections 1024;
+    worker_connections 8192;
 }
 
 http {
@@ -13,7 +15,7 @@ http {
     }
 
     # Rate limiting
-    limit_req_zone $binary_remote_addr zone=websocket:10m rate=100r/s;
+    limit_req_zone $binary_remote_addr zone=websocket:10m rate=5000r/s;
     limit_req_zone $binary_remote_addr zone=api:10m rate=1000r/s;
 
     # Logging
@@ -95,7 +97,7 @@ http {
             proxy_set_header X-Request-ID $http_x_request_id;
             proxy_read_timeout 86400;
             proxy_send_timeout 86400;
-            limit_req zone=websocket burst=20 nodelay;
+            limit_req zone=websocket burst=500 nodelay;
         }
 
         # Admin interface

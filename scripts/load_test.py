@@ -24,7 +24,7 @@ logger = logging.getLogger(__name__)
 
 class WebSocketLoadTester:
     def __init__(self, url: str, num_connections: int, messages_per_connection: int, 
-                 message_interval: float, test_duration: int):
+                 message_interval: float, test_duration: int, debug: bool = False):
         self.url = url
         self.num_connections = num_connections
         self.messages_per_connection = messages_per_connection
@@ -34,6 +34,7 @@ class WebSocketLoadTester:
         self.results: List[Dict[str, Any]] = []
         self.start_time = None
         self.end_time = None
+        self.debug = debug
         
     async def create_connection(self, connection_id: int) -> websockets.WebSocketServerProtocol:
         """Create a single WebSocket connection."""
@@ -55,6 +56,7 @@ class WebSocketLoadTester:
             'connection_id': connection_id,
             'messages_sent': 0,
             'messages_received': 0,
+            'messages_with_count': 0,
             'errors': 0,
             'latencies': [],
             'start_time': time.time()
@@ -71,30 +73,38 @@ class WebSocketLoadTester:
                 }
                 
                 send_time = time.time()
-                await websocket.send(json.dumps(message))
+                msg_str = json.dumps(message)
+                await websocket.send(msg_str)
+                if self.debug:
+                    logger.debug(f"[Conn {connection_id}] Sent (dict): {message}")
                 
-                # Wait for response
-                try:
-                    response = await asyncio.wait_for(websocket.recv(), timeout=5.0)
-                    receive_time = time.time()
-                    
-                    # Parse response
-                    data = json.loads(response)
-                    if 'count' in data:
-                        results['messages_received'] += 1
-                        results['latencies'].append(receive_time - send_time)
-                    elif 'ts' in data:
-                        # Heartbeat message
-                        continue
-                    else:
+                # Read all available messages after sending
+                while True:
+                    try:
+                        response = await asyncio.wait_for(websocket.recv(), timeout=1)
+                        data = json.loads(response)
+                        if self.debug:
+                            logger.debug(f"[Conn {connection_id}] Received (dict): {data}")
+                        receive_time = time.time()
+                        if 'count' in data:
+                            results['messages_received'] += 1
+                            results['messages_with_count'] += 1
+                            results['latencies'].append(receive_time - send_time)
+                        elif 'session_uuid' in data:
+                            results['messages_received'] += 1
+                            results['latencies'].append(receive_time - send_time)
+                        elif 'ts' in data:
+                            # Heartbeat message
+                            continue
+                        else:
+                            results['errors'] += 1
+                    except asyncio.TimeoutError:
+                        break
+                    except Exception as e:
+                        import traceback
                         results['errors'] += 1
-                        
-                except asyncio.TimeoutError:
-                    results['errors'] += 1
-                    logger.warning(f"Timeout on connection {connection_id}")
-                except Exception as e:
-                    results['errors'] += 1
-                    logger.error(f"Error receiving message on connection {connection_id}: {e}")
+                        logger.error(f"Error on connection {connection_id} during message send/receive: {e}\n{traceback.format_exc()}")
+                        break
                 
                 results['messages_sent'] += 1
                 
@@ -103,10 +113,12 @@ class WebSocketLoadTester:
                     await asyncio.sleep(self.message_interval)
                     
         except Exception as e:
-            logger.error(f"Error in connection {connection_id}: {e}")
+            import traceback
+            logger.error(f"Error in connection {connection_id}: {e}\n{traceback.format_exc()}")
             results['errors'] += 1
             
         results['end_time'] = time.time()
+
         return results
     
     async def run_test(self):
@@ -114,16 +126,32 @@ class WebSocketLoadTester:
         logger.info(f"Starting load test with {self.num_connections} connections")
         self.start_time = time.time()
         
-        # Create connections
-        logger.info("Creating connections...")
+        # Create connections gradually to avoid overwhelming the server
+        logger.info("Creating connections gradually...")
         connection_tasks = []
-        for i in range(self.num_connections):
-            task = asyncio.create_task(self.create_connection(i))
-            connection_tasks.append(task)
+        batch_size = 50  # Create 50 connections at a time
         
-        # Wait for all connections to be established
-        websockets_list = await asyncio.gather(*connection_tasks, return_exceptions=True)
-        self.connections = [ws for ws in websockets_list if ws is not None and not isinstance(ws, Exception)]
+        for i in range(0, self.num_connections, batch_size):
+            batch_end = min(i + batch_size, self.num_connections)
+            logger.info(f"Creating connections {i} to {batch_end-1}...")
+            
+            # Create batch of connections
+            batch_tasks = []
+            for j in range(i, batch_end):
+                task = asyncio.create_task(self.create_connection(j))
+                batch_tasks.append(task)
+                # Small delay between connections in the same batch
+                await asyncio.sleep(0.001)
+            
+            # Wait for this batch to complete
+            batch_results = await asyncio.gather(*batch_tasks, return_exceptions=True)
+            connection_tasks.extend(batch_results)
+            
+            # Small delay between batches
+            await asyncio.sleep(0.1)
+        
+        # Filter successful connections
+        self.connections = [ws for ws in connection_tasks if ws is not None and not isinstance(ws, Exception)]
         
         logger.info(f"Successfully created {len(self.connections)} connections")
         
@@ -173,6 +201,7 @@ class WebSocketLoadTester:
         total_duration = self.end_time - self.start_time
         total_messages_sent = sum(r['messages_sent'] for r in valid_results)
         total_messages_received = sum(r['messages_received'] for r in valid_results)
+        total_messages_with_count = sum(r.get('messages_with_count', 0) for r in valid_results)
         total_errors = sum(r['errors'] for r in valid_results)
         
         # Calculate latencies
@@ -188,6 +217,7 @@ class WebSocketLoadTester:
         print(f"Connections Successful: {len(valid_results)}")
         print(f"Total Messages Sent: {total_messages_sent}")
         print(f"Total Messages Received: {total_messages_received}")
+        print(f"Total Messages With 'count': {total_messages_with_count}")
         print(f"Total Errors: {total_errors}")
         print(f"Success Rate: {(total_messages_received/total_messages_sent*100):.2f}%" if total_messages_sent > 0 else "N/A")
         
@@ -216,8 +246,12 @@ async def main():
                        help='Test duration in seconds (default: 60)')
     parser.add_argument('--target', type=int, default=5000,
                        help='Target concurrent connections (default: 5000)')
+    parser.add_argument('--debug', action='store_true', help='Enable debug logging of all messages')
     
     args = parser.parse_args()
+    
+    if args.debug:
+        logger.setLevel(logging.DEBUG)
     
     # If target is specified, use it instead of connections
     if args.target > args.connections:
@@ -236,7 +270,8 @@ async def main():
         num_connections=args.connections,
         messages_per_connection=args.messages,
         message_interval=args.interval,
-        test_duration=args.duration
+        test_duration=args.duration,
+        debug=args.debug
     )
     
     try:

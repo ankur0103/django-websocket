@@ -185,7 +185,7 @@ test:
 # Development mode
 dev:
 	@echo "Starting development mode..."
-	cd app && uvicorn app.asgi:application --host 0.0.0.0 --port 8000 --reload
+	cd app && uvicorn app.asgi:application --host 0.0.0.0 --port 8000 --workers 8 --backlog 10000 --limit-concurrency 2000 --loop uvloop
 
 # Install dependencies
 install:

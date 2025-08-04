@@ -41,11 +41,11 @@ services:
     deploy:
       resources:
         limits:
-          memory: 1G
-          cpus: '1.0'
+          memory: 8G
+          cpus: '4.0'
         reservations:
-          cpus: '0.5'
-          memory: 512M
+          cpus: '1.0'
+          memory: 2G
 
   app_green:
     build:
@@ -77,11 +77,11 @@ services:
     deploy:
       resources:
         limits:
-          memory: 1G
-          cpus: '1.0'
+          memory: 8G
+          cpus: '4.0'
         reservations:
-          cpus: '0.5'
-          memory: 512M
+          cpus: '1.0'
+          memory: 2G
 
   nginx:
     image: nginx:alpine
@@ -141,7 +141,7 @@ services:
     ports:
       - "9080:9080"
     volumes:
-      - /var/run/docker.sock:/var/run/docker.sock:ro
+      - /var/log:/var/log
       - ../monitoring/promtail-config.yaml:/etc/promtail/config.yml:ro
     command: -config.file=/etc/promtail/config.yml
     depends_on:
