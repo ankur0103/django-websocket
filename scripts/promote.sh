@@ -146,16 +146,17 @@ switch_traffic() {
 # Function to stop old service
 stop_old_service() {
     local old_color=$1
-    
+
+    log "Triggering graceful shutdown for $old_color..."
+    curl -X POST http://localhost/chat/pre-shutdown/ || log "Pre-shutdown endpoint failed or not available. Proceeding with shutdown."
+    sleep 5
+
     log "Stopping app_$old_color..."
-    
     # Send SIGTERM for graceful shutdown
     docker compose -f "$DOCKER_COMPOSE_FILE" stop "app_$old_color"
-    
     # Wait for graceful shutdown
     local timeout=15
     local elapsed=0
-    
     while [ $elapsed -lt $timeout ]; do
         if ! docker compose -f "$DOCKER_COMPOSE_FILE" ps "app_$old_color" | grep -q "Up"; then
             log "app_$old_color stopped gracefully"
@@ -164,7 +165,6 @@ stop_old_service() {
         sleep 1
         ((elapsed++))
     done
-    
     warn "app_$old_color did not stop gracefully, forcing shutdown"
     docker compose -f "$DOCKER_COMPOSE_FILE" kill "app_$old_color"
 }
@@ -195,13 +195,19 @@ main() {
     sleep 5
     run_smoke_tests "$next_color"
     
+    # Step 5: Stop old environment automatically
+    log "Stopping old environment: $current_color..."
+    stop_old_service "$current_color"
+    
     log "Blue-green deployment completed successfully!"
     log "Active color: $next_color"
-    log "Previous color: $current_color (still running for rollback safety)"
+    log "Previous color: $current_color (stopped)"
     log ""
-    log "IMPORTANT: The old environment is still running for rollback safety."
-    log "To stop the old environment after confirming stability, run:"
-    log "  make stop-old"
+    log "Access points:"
+    log "  - Application: http://localhost"
+    log "  - Health: http://localhost/healthz"
+    log "  - Metrics: http://localhost/metrics"
+    log "  - WebSocket: ws://localhost/ws/chat/"
 }
 
 # Handle script arguments

@@ -98,14 +98,66 @@ def setup_signal_handlers():
         original_sigterm = signal.getsignal(signal.SIGTERM)
         original_sigint = signal.getsignal(signal.SIGINT)
         
+        logger.info(f"📋 Current SIGTERM handler: {original_sigterm}")
+        logger.info(f"📋 Current SIGINT handler: {original_sigint}")
+        
         # Set our custom handlers
         signal.signal(signal.SIGTERM, signal_handler)
         signal.signal(signal.SIGINT, signal_handler)
         
+        # Verify handlers were set
+        new_sigterm = signal.getsignal(signal.SIGTERM)
+        new_sigint = signal.getsignal(signal.SIGINT)
+        
         logger.info("✅ Signal handlers configured for SIGTERM and SIGINT")
-        logger.debug(f"Original SIGTERM handler: {original_sigterm}")
-        logger.debug(f"Original SIGINT handler: {original_sigint}")
+        logger.info(f"✅ New SIGTERM handler: {new_sigterm}")
+        logger.info(f"✅ New SIGINT handler: {new_sigint}")
+        
+        # Test if our handler is actually set
+        if new_sigterm == signal_handler:
+            logger.info("✅ SIGTERM handler successfully set to our custom handler")
+        else:
+            logger.warning(f"⚠️  SIGTERM handler not set correctly. Expected: {signal_handler}, Got: {new_sigterm}")
+            logger.warning("⚠️  This might be because uvicorn overrode our handler")
+        
+        # Test signal handler with a simple test
+        logger.info("🧪 Testing signal handler setup...")
+        
+        # Store original handlers for potential restoration
+        global _original_handlers
+        _original_handlers = {
+            'SIGTERM': original_sigterm,
+            'SIGINT': original_sigint
+        }
         
     except Exception as e:
         logger.error(f"❌ Failed to setup signal handlers: {e}")
-        # Continue without signal handlers rather than crashing 
+        import traceback
+        logger.error(f"❌ Traceback: {traceback.format_exc()}")
+        # Continue without signal handlers rather than crashing
+
+def test_signal_handler():
+    """Test function to manually trigger signal handler for debugging."""
+    logger.info("🧪 Manually testing signal handler...")
+    signal_handler(signal.SIGTERM, None)
+
+def check_and_restore_signal_handlers():
+    """Check if our signal handlers are still set, restore if needed."""
+    current_sigterm = signal.getsignal(signal.SIGTERM)
+    current_sigint = signal.getsignal(signal.SIGINT)
+    
+    if current_sigterm != signal_handler:
+        logger.warning("⚠️  SIGTERM handler was overridden, restoring...")
+        try:
+            signal.signal(signal.SIGTERM, signal_handler)
+            logger.info("✅ SIGTERM handler restored")
+        except Exception as e:
+            logger.error(f"❌ Failed to restore SIGTERM handler: {e}")
+    
+    if current_sigint != signal_handler:
+        logger.warning("⚠️  SIGINT handler was overridden, restoring...")
+        try:
+            signal.signal(signal.SIGINT, signal_handler)
+            logger.info("✅ SIGINT handler restored")
+        except Exception as e:
+            logger.error(f"❌ Failed to restore SIGINT handler: {e}") 

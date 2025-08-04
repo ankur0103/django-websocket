@@ -1,6 +1,12 @@
 from django.shortcuts import render
 from django.http import JsonResponse
 from django.conf import settings
+from django.views.decorators.csrf import csrf_exempt
+from asgiref.sync import async_to_sync
+from chat.consumers import send_goodbye_to_all_consumers
+import structlog
+
+logger = structlog.get_logger(__name__)
 
 # Create your views here.
 
@@ -21,3 +27,9 @@ def websocket_info(request):
 def chat_home(request):
     """Simple chat home page."""
     return render(request, 'chat/home.html')
+
+@csrf_exempt
+def pre_shutdown(request):
+    logger.info("Pre-shutdown endpoint called: sending goodbye to all consumers")
+    async_to_sync(send_goodbye_to_all_consumers)()
+    return JsonResponse({'status': 'goodbye sent'})

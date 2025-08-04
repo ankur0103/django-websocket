@@ -72,5 +72,36 @@
         <h3>Goodbye (on disconnect):</h3>
         <pre>{"bye": true, "total": 5}</pre>
     </div>
+
+    <script>
+// Replace this with your actual WebSocket URL
+const ws = new WebSocket("ws://localhost:8000/ws/chat/");
+
+ws.onopen = function() {
+    console.log("WebSocket connection opened");
+};
+
+ws.onmessage = function(event) {
+    console.log("WebSocket message received:", event.data);
+};
+
+ws.onclose = function(event) {
+    console.log(
+        "WebSocket closed:",
+        "code:", event.code,
+        "reason:", event.reason,
+        "wasClean:", event.wasClean
+    );
+    if (event.wasClean) {
+        console.log("Connection closed cleanly (code:", event.code, ")");
+    } else {
+        console.log("Connection lost or closed abnormally (code:", event.code, ")");
+    }
+};
+
+ws.onerror = function(event) {
+    console.log("WebSocket error:", event);
+};
+</script>
 </body>
 </html> 

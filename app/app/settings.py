@@ -150,10 +150,32 @@ STATICFILES_DIRS = [
 
 DEFAULT_AUTO_FIELD = "django.db.models.BigAutoField"
 
+# Custom filter for uvicorn logs
+class UvicornFilter:
+    """Filter to only show important uvicorn messages."""
+    
+    def filter(self, record):
+        # Only show error messages from uvicorn
+        if record.levelno >= 40:  # ERROR level
+            return True
+        # Show startup/shutdown messages
+        if "Started server process" in record.getMessage():
+            return True
+        if "Shutting down" in record.getMessage():
+            return True
+        if "Finished server process" in record.getMessage():
+            return True
+        return False
+
 # Structured Logging Configuration
 LOGGING = {
     "version": 1,
     "disable_existing_loggers": False,
+    "filters": {
+        "uvicorn_filter": {
+            "()": UvicornFilter,
+        },
+    },
     "formatters": {
         "json": {
             "()": structlog.stdlib.ProcessorFormatter,
@@ -163,11 +185,20 @@ LOGGING = {
             "format": "%(asctime)s [%(levelname)s] %(name)s: %(message)s",
             "datefmt": "%Y-%m-%d %H:%M:%S",
         },
+        "clean": {
+            "format": "%(asctime)s [%(levelname)s] %(message)s",
+            "datefmt": "%Y-%m-%d %H:%M:%S",
+        },
     },
     "handlers": {
         "console": {
             "class": "logging.StreamHandler",
             "formatter": "console",
+            "stream": "ext://sys.stdout",
+        },
+        "clean_console": {
+            "class": "logging.StreamHandler",
+            "formatter": "clean",
             "stream": "ext://sys.stdout",
         },
         "json_console": {
@@ -197,14 +228,22 @@ LOGGING = {
             "propagate": False,
         },
         "uvicorn": {
-            "handlers": ["console"],
+            "handlers": ["clean_console"],
             "level": "INFO",
             "propagate": False,
+            "filters": ["uvicorn_filter"],
         },
         "uvicorn.access": {
-            "handlers": ["console"],
+            "handlers": ["clean_console"],
             "level": "INFO",
             "propagate": False,
+            "filters": ["uvicorn_filter"],
+        },
+        "uvicorn.error": {
+            "handlers": ["clean_console"],
+            "level": "INFO",
+            "propagate": False,
+            "filters": ["uvicorn_filter"],
         },
     },
 }

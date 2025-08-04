@@ -150,20 +150,23 @@ start_service() {
 # Function to stop service
 stop_service() {
     local color=$1
-    
+    local port_var_name=$(echo "${color^^}_PORT")
+    local port=${!port_var_name}
+
+    log "Triggering graceful shutdown for $color on port $port..."
+    curl -X POST --max-time 5 http://localhost:$port/chat/pre-shutdown/ || log "Pre-shutdown endpoint failed or not available. Proceeding with shutdown."
+    sleep 3
+
     log "Stopping $color service..."
-    
     local pid_file="$PROJECT_DIR/.${color}_pid"
     if [ -f "$pid_file" ]; then
         local pid=$(cat "$pid_file")
         if kill -0 $pid 2>/dev/null; then
             # Send SIGTERM for graceful shutdown
             kill -TERM $pid
-            
             # Wait for graceful shutdown
             local timeout=15
             local elapsed=0
-            
             while [ $elapsed -lt $timeout ]; do
                 if ! kill -0 $pid 2>/dev/null; then
                     log "$color service stopped gracefully"
@@ -173,7 +176,6 @@ stop_service() {
                 sleep 1
                 ((elapsed++))
             done
-            
             warn "$color service did not stop gracefully, forcing shutdown"
             kill -KILL $pid
             rm -f "$pid_file"

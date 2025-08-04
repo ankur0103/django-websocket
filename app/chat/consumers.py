@@ -21,19 +21,33 @@ logger = structlog.get_logger(__name__)
 
 
 async def send_goodbye_to_all_consumers():
-    """Send goodbye message to all active consumers during shutdown."""
-    logger.info("Sending goodbye messages to all active connections", count=len(active_consumers))
-    
+    """Wait for inflight messages, then send goodbye and close to all active consumers."""
+    logger.info("Waiting for inflight messages to finish", in_flight=len(active_requests))
+    timeout = getattr(settings, 'GRACEFUL_SHUTDOWN_TIMEOUT', 10)
+    start = asyncio.get_event_loop().time()
+    while active_requests and (asyncio.get_event_loop().time() - start) < timeout:
+        await asyncio.sleep(0.1)
+    if active_requests:
+        logger.warning("Some inflight messages did not finish before shutdown", in_flight=len(active_requests))
+    else:
+        logger.info("All inflight messages completed")
+
     goodbye_tasks = []
+    logger.info(f"Active consumers: {active_consumers}")
     for consumer in list(active_consumers):
         if consumer.is_connected:
-            task = asyncio.create_task(send_goodbye_to_consumer(consumer))
-            goodbye_tasks.append(task)
-    
+            async def goodbye_and_close(consumer):
+                try:
+                    await send_goodbye_to_consumer(consumer)
+                    await consumer.close(code=1001)
+                except Exception as e:
+                    logger.error("Error during goodbye_and_close", connection_id=consumer.connection_id, error=str(e))
+            goodbye_tasks.append(asyncio.create_task(goodbye_and_close(consumer)))
     if goodbye_tasks:
-        # Wait for all goodbye messages to be sent
         await asyncio.gather(*goodbye_tasks, return_exceptions=True)
-        logger.info("All goodbye messages sent")
+        logger.info("All goodbye messages sent and connections closed")
+    else:
+        logger.info("No active consumers to send goodbye to")
 
 async def send_goodbye_to_consumer(consumer):
     """Send goodbye message to a specific consumer."""
@@ -117,9 +131,7 @@ class ChatConsumer(AsyncWebsocketConsumer):
             
             logger.info("Adding to active consumers", connection_id=self.connection_id)
             active_consumers.add(self)
-            logger.info("Consumer added to active_consumers", 
-                       connection_id=self.connection_id, 
-                       active_count=len(active_consumers))
+            logger.info(f"Active consumers after connect: {len(active_consumers)}", connection_id=self.connection_id)
             
             # Start heartbeat
             logger.info("Starting heartbeat task", connection_id=self.connection_id)
@@ -201,6 +213,7 @@ class ChatConsumer(AsyncWebsocketConsumer):
             
             # Remove from tracking
             active_consumers.discard(self)
+            logger.info(f"Active consumers after disconnect: {len(active_consumers)}", connection_id=self.connection_id)
             
             # Keep session in store for potential reconnection
             # Only remove if explicitly requested or after a long timeout

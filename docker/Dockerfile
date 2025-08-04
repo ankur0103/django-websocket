@@ -35,4 +35,4 @@ HEALTHCHECK --interval=30s --timeout=10s --start-period=5s --retries=3 \
 # --workers 4: CPU parallelism (1 worker per CPU core for I/O-bound workloads)
 # --loop uvloop: 2-4x performance improvement over asyncio
 # --worker-class uvicorn.workers.UvicornWorker: Optimized for ASGI
-CMD ["uvicorn", "app.asgi:application", "--host", "0.0.0.0", "--port", "8000", "--workers", "4", "--loop", "uvloop", "--worker-class", "uvicorn.workers.UvicornWorker"]
+CMD ["uvicorn", "app.asgi:application", "--host", "0.0.0.0", "--port", "8000", "--workers", "4", "--loop", "uvloop"]
