@@ -17,7 +17,7 @@ NC='\033[0m' # No Color
 
 # Configuration
 DOCKER_COMPOSE_FILE="$PROJECT_DIR/docker/compose.yml"
-NGINX_CONF="$PROJECT_DIR/docker/nginx/nginx.conf"
+NGINX_CONF="$PROJECT_DIR/nginx/nginx.conf"
 BACKUP_DIR="$PROJECT_DIR/backups"
 
 # Logging
@@ -36,10 +36,14 @@ error() {
 
 # Function to get current active color
 get_active_color() {
-    if grep -q "server app_blue:8000" "$NGINX_CONF"; then
+    # Check which server is currently active in the app_active upstream block
+    if grep -A 3 "upstream app_active" "$NGINX_CONF" | grep -q "server app_blue:8000"; then
         echo "blue"
-    else
+    elif grep -A 3 "upstream app_active" "$NGINX_CONF" | grep -q "server app_green:8000"; then
         echo "green"
+    else
+        # Default fallback
+        echo "blue"
     fi
 }
 
@@ -180,9 +184,13 @@ main() {
     log "Current active color: $current_color"
     log "Promoting to color: $next_color"
     
-    # Step 1: Build and start the next color
-    log "Building and starting app_$next_color..."
-    docker compose -f "$DOCKER_COMPOSE_FILE" up -d --build "app_$next_color"
+    # Step 1: Start the next color (build only if needed)
+    if docker compose -f "$DOCKER_COMPOSE_FILE" ps "app_$next_color" | grep -q "Up.*healthy"; then
+        log "app_$next_color is already running and healthy, skipping rebuild"
+    else
+        log "Building and starting app_$next_color..."
+        docker compose -f "$DOCKER_COMPOSE_FILE" up -d --build "app_$next_color"
+    fi
     
     # Step 2: Wait for service to be healthy
     check_service_health "$next_color"
