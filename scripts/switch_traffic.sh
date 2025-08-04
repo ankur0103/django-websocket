@@ -2,6 +2,7 @@
 
 # Script to switch nginx traffic between blue and green environments
 # Usage: ./switch_traffic.sh [blue|green]
+# This script ONLY changes the app_active upstream target, preserving all other optimized settings
 
 set -e
 
@@ -27,278 +28,78 @@ cleanup_old_backups() {
 
 cleanup_old_backups "$BACKUP_DIR"
 
-# Function to switch to blue
+# Function to switch to blue (preserves all optimized settings)
 switch_to_blue() {
     echo "Switching traffic to blue..."
     
-    # Create temporary file with blue configuration
-    cat > "$NGINX_CONF" << 'EOF'
-events {
-    worker_connections 1024;
+    # Update only the app_active upstream server line
+    sed -i.bak '/upstream app_active {/,/}/ {
+        s/server app_green:8000/server app_blue:8000/g
+        s/server app_blue:8000/server app_blue:8000/g
+    }' "$NGINX_CONF"
+    
+    echo "Traffic switched to blue (app_blue:8000)"
 }
 
-http {
-    upstream app_blue {
-        server app_blue:8000 max_fails=3 fail_timeout=30s;
-    }
-
-    # Default to blue
-    upstream app_active {
-        server app_blue:8000 max_fails=3 fail_timeout=30s;
-    }
-
-    # Rate limiting
-    limit_req_zone $binary_remote_addr zone=websocket:10m rate=100r/s;
-    limit_req_zone $binary_remote_addr zone=api:10m rate=1000r/s;
-
-    # Logging
-    log_format json_combined escape=json '{'
-        '"time_local":"$time_local",'
-        '"remote_addr":"$remote_addr",'
-        '"remote_user":"$remote_user",'
-        '"request":"$request",'
-        '"status": "$status",'
-        '"body_bytes_sent":"$body_bytes_sent",'
-        '"request_time":"$request_time",'
-        '"http_referrer":"$http_referer",'
-        '"http_user_agent":"$http_user_agent",'
-        '"request_id":"$http_x_request_id"'
-    '}';
-
-    access_log /var/log/nginx/access.log json_combined;
-    error_log /var/log/nginx/error.log;
-
-    # Gzip compression
-    gzip on;
-    gzip_vary on;
-    gzip_min_length 1024;
-    gzip_types text/plain text/css text/xml text/javascript application/javascript application/xml+rss application/json;
-
-    server {
-        listen 80;
-        server_name localhost;
-
-        # Health check endpoint
-        location /healthz {
-            proxy_pass http://app_active;
-            proxy_set_header Host $host;
-            proxy_set_header X-Real-IP $remote_addr;
-            proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
-            proxy_set_header X-Request-ID $http_x_request_id;
-            access_log off;
-        }
-
-        # Readiness check endpoint
-        location /readyz {
-            proxy_pass http://app_active;
-            proxy_set_header Host $host;
-            proxy_set_header X-Real-IP $remote_addr;
-            proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
-            proxy_set_header X-Request-ID $http_x_request_id;
-            access_log off;
-        }
-
-        # Metrics endpoint
-        location /metrics {
-            proxy_pass http://app_active;
-            proxy_set_header Host $host;
-            proxy_set_header X-Real-IP $remote_addr;
-            proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
-            proxy_set_header X-Request-ID $http_x_request_id;
-            limit_req zone=api burst=10 nodelay;
-        }
-
-        # Status endpoint
-        location /status {
-            proxy_pass http://app_active;
-            proxy_set_header Host $host;
-            proxy_set_header X-Real-IP $remote_addr;
-            proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
-            proxy_set_header X-Request-ID $http_x_request_id;
-            limit_req zone=api burst=10 nodelay;
-        }
-
-        # WebSocket endpoint
-        location /ws/ {
-            proxy_pass http://app_active;
-            proxy_http_version 1.1;
-            proxy_set_header Upgrade $http_upgrade;
-            proxy_set_header Connection "upgrade";
-            proxy_set_header Host $host;
-            proxy_set_header X-Real-IP $remote_addr;
-            proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
-            proxy_set_header X-Request-ID $http_x_request_id;
-            proxy_read_timeout 86400;
-            proxy_send_timeout 86400;
-            limit_req zone=websocket burst=20 nodelay;
-        }
-
-        # Admin interface
-        location /admin/ {
-            proxy_pass http://app_active;
-            proxy_set_header Host $host;
-            proxy_set_header X-Real-IP $remote_addr;
-            proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
-            proxy_set_header X-Request-ID $http_x_request_id;
-            limit_req zone=api burst=10 nodelay;
-        }
-
-        # Default location
-        location / {
-            proxy_pass http://app_active;
-            proxy_set_header Host $host;
-            proxy_set_header X-Real-IP $remote_addr;
-            proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
-            proxy_set_header X-Request-ID $http_x_request_id;
-            limit_req zone=api burst=10 nodelay;
-        }
-    }
-}
-EOF
-}
-
-# Function to switch to green
+# Function to switch to green (preserves all optimized settings)
 switch_to_green() {
     echo "Switching traffic to green..."
     
-    # Create temporary file with green configuration
-    cat > "$NGINX_CONF" << 'EOF'
-events {
-    worker_connections 1024;
+    # Update only the app_active upstream server line
+    sed -i.bak '/upstream app_active {/,/}/ {
+        s/server app_blue:8000/server app_green:8000/g
+        s/server app_green:8000/server app_green:8000/g
+    }' "$NGINX_CONF"
+    
+    echo "Traffic switched to green (app_green:8000)"
 }
 
-http {
-    upstream app_green {
-        server app_green:8000 max_fails=3 fail_timeout=30s;
-    }
-
-    # Default to green
-    upstream app_active {
-        server app_green:8000 max_fails=3 fail_timeout=30s;
-    }
-
-    # Rate limiting
-    limit_req_zone $binary_remote_addr zone=websocket:10m rate=100r/s;
-    limit_req_zone $binary_remote_addr zone=api:10m rate=1000r/s;
-
-    # Logging
-    log_format json_combined escape=json '{'
-        '"time_local":"$time_local",'
-        '"remote_addr":"$remote_addr",'
-        '"remote_user":"$remote_user",'
-        '"request":"$request",'
-        '"status": "$status",'
-        '"body_bytes_sent":"$body_bytes_sent",'
-        '"request_time":"$request_time",'
-        '"http_referrer":"$http_referer",'
-        '"http_user_agent":"$http_user_agent",'
-        '"request_id":"$http_x_request_id"'
-    '}';
-
-    access_log /var/log/nginx/access.log json_combined;
-    error_log /var/log/nginx/error.log;
-
-    # Gzip compression
-    gzip on;
-    gzip_vary on;
-    gzip_min_length 1024;
-    gzip_types text/plain text/css text/xml text/javascript application/javascript application/xml+rss application/json;
-
-    server {
-        listen 80;
-        server_name localhost;
-
-        # Health check endpoint
-        location /healthz {
-            proxy_pass http://app_active;
-            proxy_set_header Host $host;
-            proxy_set_header X-Real-IP $remote_addr;
-            proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
-            proxy_set_header X-Request-ID $http_x_request_id;
-            access_log off;
-        }
-
-        # Readiness check endpoint
-        location /readyz {
-            proxy_pass http://app_active;
-            proxy_set_header Host $host;
-            proxy_set_header X-Real-IP $remote_addr;
-            proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
-            proxy_set_header X-Request-ID $http_x_request_id;
-            access_log off;
-        }
-
-        # Metrics endpoint
-        location /metrics {
-            proxy_pass http://app_active;
-            proxy_set_header Host $host;
-            proxy_set_header X-Real-IP $remote_addr;
-            proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
-            proxy_set_header X-Request-ID $http_x_request_id;
-            limit_req zone=api burst=10 nodelay;
-        }
-
-        # Status endpoint
-        location /status {
-            proxy_pass http://app_active;
-            proxy_set_header Host $host;
-            proxy_set_header X-Real-IP $remote_addr;
-            proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
-            proxy_set_header X-Request-ID $http_x_request_id;
-            limit_req zone=api burst=10 nodelay;
-        }
-
-        # WebSocket endpoint
-        location /ws/ {
-            proxy_pass http://app_active;
-            proxy_http_version 1.1;
-            proxy_set_header Upgrade $http_upgrade;
-            proxy_set_header Connection "upgrade";
-            proxy_set_header Host $host;
-            proxy_set_header X-Real-IP $remote_addr;
-            proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
-            proxy_set_header X-Request-ID $http_x_request_id;
-            proxy_read_timeout 86400;
-            proxy_send_timeout 86400;
-            limit_req zone=websocket burst=20 nodelay;
-        }
-
-        # Admin interface
-        location /admin/ {
-            proxy_pass http://app_active;
-            proxy_set_header Host $host;
-            proxy_set_header X-Real-IP $remote_addr;
-            proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
-            proxy_set_header X-Request-ID $http_x_request_id;
-            limit_req zone=api burst=10 nodelay;
-        }
-
-        # Default location
-        location / {
-            proxy_pass http://app_active;
-            proxy_set_header Host $host;
-            proxy_set_header X-Real-IP $remote_addr;
-            proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
-            proxy_set_header X-Request-ID $http_x_request_id;
-            limit_req zone=api burst=10 nodelay;
-        }
-    }
-}
-EOF
+# Function to validate nginx config
+validate_config() {
+    echo "Validating nginx configuration..."
+    if docker compose -f docker/compose.yml exec nginx nginx -t 2>/dev/null; then
+        echo "✅ Nginx configuration is valid"
+        return 0
+    else
+        echo "❌ Nginx configuration is invalid"
+        return 1
+    fi
 }
 
 # Main logic
-case "${1:-}" in
-    "blue")
+if [ "$#" -ne 1 ]; then
+    echo "Usage: $0 [blue|green]"
+    exit 1
+fi
+
+TARGET_COLOR="$1"
+
+case "$TARGET_COLOR" in
+    blue)
         switch_to_blue
         ;;
-    "green")
+    green)
         switch_to_green
         ;;
     *)
-        echo "Usage: $0 [blue|green]"
+        echo "Error: Invalid color '$TARGET_COLOR'. Use 'blue' or 'green'."
         exit 1
         ;;
 esac
 
-echo "Traffic switched successfully!" 
+# Validate the configuration
+if validate_config; then
+    echo "✅ Traffic successfully switched to $TARGET_COLOR"
+    echo ""
+    echo "Current app_active upstream:"
+    grep -A 3 "upstream app_active" "$NGINX_CONF"
+else
+    echo "❌ Configuration validation failed. Restoring backup..."
+    # Restore from backup
+    LATEST_BACKUP=$(ls -t "$BACKUP_DIR"/nginx.conf.* | head -1)
+    if [ -n "$LATEST_BACKUP" ]; then
+        cp "$LATEST_BACKUP" "$NGINX_CONF"
+        echo "Configuration restored from backup: $LATEST_BACKUP"
+    fi
+    exit 1
+fi

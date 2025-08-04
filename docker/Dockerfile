@@ -37,5 +37,4 @@ HEALTHCHECK --interval=30s --timeout=10s --start-period=5s --retries=3 \
 # --backlog 20000: Large connection queue for handling bursts
 # --limit-concurrency 6000: Maximum concurrent connections per process
 # --loop uvloop: 2-4x performance improvement over asyncio
-# --worker-connections 1000: Connections per worker process
-CMD ["uvicorn", "app.asgi:application", "--host", "0.0.0.0", "--port", "8000", "--workers", "16", "--backlog", "20000", "--limit-concurrency", "6000", "--loop", "uvloop", "--worker-connections", "1000"]
+CMD ["uvicorn", "app.asgi:application", "--host", "0.0.0.0", "--port", "8000", "--workers", "16", "--backlog", "20000", "--limit-concurrency", "6000", "--loop", "uvloop"]
