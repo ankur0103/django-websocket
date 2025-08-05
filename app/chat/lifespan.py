@@ -1,4 +1,3 @@
-import asyncio
 from chat.consumers import send_goodbye_to_all_consumers
 import structlog
 

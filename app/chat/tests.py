@@ -1,9 +1,7 @@
-import json
 import pytest
 from channels.testing import WebsocketCommunicator
 from django.test import TestCase
 from app.asgi import application
-from chat.consumers import ChatConsumer
 
 
 class ChatConsumerTest(TestCase):
