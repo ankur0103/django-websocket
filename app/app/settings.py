@@ -180,6 +180,9 @@ LOGGING = {
             "()": structlog.stdlib.ProcessorFormatter,
             "processor": structlog.processors.JSONRenderer(),
         },
+        "simple_json": {
+            "format": "%(asctime)s - %(name)s - %(levelname)s - %(message)s"
+        },
         "console": {
             "format": "%(asctime)s [%(levelname)s] %(name)s: %(message)s",
             "datefmt": "%Y-%m-%d %H:%M:%S",
@@ -205,6 +208,13 @@ LOGGING = {
             "formatter": "json",
             "stream": "ext://sys.stdout",
         },
+        "file": {
+            "class": "logging.handlers.RotatingFileHandler",
+            "filename": "/app/logs/django.log",
+            "maxBytes": 10*1024*1024,  # 10MB
+            "backupCount": 5,
+            "formatter": "simple_json",
+        },
     },
     "root": {
         "handlers": ["console"],
@@ -212,17 +222,17 @@ LOGGING = {
     },
     "loggers": {
         "django": {
-            "handlers": ["console"],
+            "handlers": ["console", "file"],
             "level": "INFO",
             "propagate": False,
         },
         "chat": {
-            "handlers": ["console"],
+            "handlers": ["console", "file"],
             "level": "DEBUG",
             "propagate": False,
         },
         "monitoring": {
-            "handlers": ["console"],
+            "handlers": ["console", "file"],
             "level": "DEBUG",
             "propagate": False,
         },
@@ -246,6 +256,10 @@ LOGGING = {
         },
     },
 }
+
+# Ensure log directory exists when Django starts
+log_dir = Path('/app/logs')
+log_dir.mkdir(exist_ok=True)
 
 # Structlog Configuration
 structlog.configure(
