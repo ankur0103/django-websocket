@@ -9,7 +9,6 @@ help:
 	@echo "  make down        - Stop all services"
 	@echo "  make build       - Build all Docker images"
 	@echo "  make promote     - Perform blue-green deployment (Docker)"
-	@echo "  make promote-local - Perform blue-green deployment (local)"
 	@echo "  make deploy-green - Deploy new code to green environment (when blue is active)"
 	@echo "  make deploy-blue  - Deploy new code to blue environment (when green is active)"
 	@echo "  make deploy      - Smart deploy: automatically deploy to idle environment"
@@ -50,11 +49,7 @@ build:
 promote:
 	@echo "Performing blue-green deployment..."
 	./scripts/promote.sh
-
-# Perform local blue-green deployment (without Docker)
-promote-local:
-	@echo "Performing local blue-green deployment..."
-	./scripts/promote-local.sh
+	
 
 # Deploy new code to green environment (when blue is active)
 deploy-green:

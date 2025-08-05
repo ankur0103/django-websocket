@@ -38,7 +38,7 @@ get_top_metrics() {
     local metrics_data
     if metrics_data=$(curl -s "$METRICS_URL" 2>/dev/null); then
         echo "=== Top 5 Metrics ==="
-        echo "$metrics_data" | grep -E '^(websocket_|http_|app_)' | head -5
+        echo "$metrics_data" | grep -E '^(websocket_|http_|app_)' | head -5 || echo "No matching metrics found"
         echo ""
     else
         warn "Failed to fetch metrics from $METRICS_URL"
@@ -47,12 +47,14 @@ get_top_metrics() {
 
 # Function to get active connections
 get_active_connections() {
-    local blue_connections=0
-    local green_connections=0
+    local status_response
+    local active_connections=0
     
-    if curl -s "http://localhost/status" >/dev/null 2>&1; then
-        blue_connections=$(curl -s "http://localhost/status" | jq -r '.active_connections // 0' 2>/dev/null || echo "0")
-        echo "Active connections: $blue_connections"
+    if status_response=$(curl -s "http://localhost/status" 2>/dev/null); then
+        # Clean response and extract connections
+        status_response=$(echo "$status_response" | tr -d '%' | head -1)
+        active_connections=$(echo "$status_response" | jq -r '.active_connections // 0' 2>/dev/null || echo "0")
+        echo "Active connections: $active_connections"
     else
         echo "Active connections: unknown"
     fi
@@ -62,15 +64,23 @@ get_active_connections() {
 check_service_health() {
     local health_status
     local ready_status
+    local health_result="unknown"
+    local ready_result="unknown"
     
     if health_status=$(curl -s "http://localhost/healthz" 2>/dev/null); then
-        echo "Health: $(echo "$health_status" | jq -r '.status // "unknown"')"
+        # Clean response and extract status
+        health_status=$(echo "$health_status" | tr -d '%' | head -1)
+        health_result=$(echo "$health_status" | jq -r '.status // "unknown"' 2>/dev/null || echo "unknown")
+        echo "Health: $health_result"
     else
         echo "Health: failed"
     fi
     
     if ready_status=$(curl -s "http://localhost/readyz" 2>/dev/null); then
-        echo "Ready: $(echo "$ready_status" | jq -r '.status // "unknown"')"
+        # Clean response and extract status
+        ready_status=$(echo "$ready_status" | tr -d '%' | head -1)
+        ready_result=$(echo "$ready_status" | jq -r '.status // "unknown"' 2>/dev/null || echo "unknown")
+        echo "Ready: $ready_result"
     else
         echo "Ready: failed"
     fi
