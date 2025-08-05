@@ -104,7 +104,7 @@ fi
 echo ""
 echo "5. Testing Pytest Framework"
 echo "---------------------------"
-if cd app && python -m pytest chat/tests.py::ChatConsumerTest::test_websocket_connection -v > /dev/null 2>&1; then
+if cd app && python -m it run  -v > /dev/null 2>&1; then
     print_result "Pytest Framework" "PASS" "Tests are running"
     cd ..
 else

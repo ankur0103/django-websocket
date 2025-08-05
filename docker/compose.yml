@@ -73,7 +73,7 @@ services:
     # - Connection capacity: 500-2000 per worker (varies by hardware)
     # - Total capacity: 2000-8000 concurrent connections (4 workers)
     # - Redis channel layer for inter-worker communication
-    # - Use scripts/capacity_test.py to determine actual limits
+    # - Use scripts/load_test.py to validate performance under load
     deploy:
       resources:
         limits:

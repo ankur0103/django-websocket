@@ -235,10 +235,7 @@ class ChatConsumer(AsyncWebsocketConsumer):
             # Safely increment error metric
             try:
                 from monitoring.metrics import websocket_errors_total
-                websocket_errors_total.labels(
-                    color=getattr(settings, 'APP_COLOR', 'unknown'), 
-                    error_type="disconnect_error"
-                ).inc()
+                websocket_errors_total.labels(error_type="disconnect_error").inc()
             except Exception:
                 pass
 
@@ -294,13 +291,11 @@ class ChatConsumer(AsyncWebsocketConsumer):
             # Record metrics safely
             try:
                 from monitoring.metrics import websocket_messages_total, websocket_message_duration
-                websocket_messages_total.labels(
-                    color=getattr(settings, 'APP_COLOR', 'unknown'), 
-                    type="received"
-                ).inc()
+                websocket_messages_total.labels(type="received").inc()
+                websocket_messages_total.labels(type="sent").inc()
                 
                 duration = asyncio.get_event_loop().time() - start_time
-                websocket_message_duration.labels(color=getattr(settings, 'APP_COLOR', 'unknown')).observe(duration)
+                websocket_message_duration.observe(duration)
             except Exception:
                 pass
             
@@ -320,10 +315,7 @@ class ChatConsumer(AsyncWebsocketConsumer):
             # Safely increment error metric
             try:
                 from monitoring.metrics import websocket_errors_total
-                websocket_errors_total.labels(
-                    color=getattr(settings, 'APP_COLOR', 'unknown'), 
-                    error_type="json_decode_error"
-                ).inc()
+                websocket_errors_total.labels(error_type="json_decode_error").inc()
             except Exception:
                 pass
             await self.send(text_data=json.dumps({
@@ -363,6 +355,13 @@ class ChatConsumer(AsyncWebsocketConsumer):
                             "ts": datetime.utcnow().isoformat() + "Z"
                         }
                         await self.send(text_data=json.dumps(heartbeat))
+                        
+                        # Record heartbeat message metric
+                        try:
+                            from monitoring.metrics import websocket_messages_total
+                            websocket_messages_total.labels(type="heartbeat").inc()
+                        except Exception:
+                            pass
                         
                         logger.debug(
                             "Heartbeat sent",

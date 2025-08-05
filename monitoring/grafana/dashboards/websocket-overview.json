@@ -12,7 +12,7 @@
         "targets": [
           {
             "expr": "websocket_connections_active",
-            "legendFormat": "{{color}}"
+            "legendFormat": "Active Connections"
           }
         ],
         "fieldConfig": {
@@ -53,7 +53,7 @@
         "targets": [
           {
             "expr": "websocket_connections_total",
-            "legendFormat": "{{color}}"
+            "legendFormat": "Total Connections"
           }
         ],
         "fieldConfig": {
@@ -90,7 +90,7 @@
         "targets": [
           {
             "expr": "rate(websocket_messages_total[5m])",
-            "legendFormat": "{{color}} - {{type}}"
+            "legendFormat": "{{type}}"
           }
         ],
         "fieldConfig": {
@@ -156,7 +156,7 @@
         "targets": [
           {
             "expr": "rate(websocket_errors_total[5m])",
-            "legendFormat": "{{color}} - {{error_type}}"
+            "legendFormat": "{{error_type}}"
           }
         ],
         "fieldConfig": {
@@ -222,7 +222,7 @@
         "targets": [
           {
             "expr": "histogram_quantile(0.95, rate(websocket_message_duration_seconds_bucket[5m]))",
-            "legendFormat": "{{color}}"
+            "legendFormat": "95th Percentile"
           }
         ],
         "fieldConfig": {
@@ -355,11 +355,11 @@
         "targets": [
           {
             "expr": "app_startup_time_seconds",
-            "legendFormat": "Startup - {{color}}"
+            "legendFormat": "Startup Time"
           },
           {
             "expr": "app_shutdown_time_seconds",
-            "legendFormat": "Shutdown - {{color}}"
+            "legendFormat": "Shutdown Time"
           }
         ],
         "fieldConfig": {

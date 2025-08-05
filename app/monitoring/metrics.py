@@ -7,32 +7,29 @@ from django.conf import settings
 # Metrics
 websocket_connections_total = Counter(
     'websocket_connections_total',
-    'Total number of WebSocket connections',
-    ['color']
+    'Total number of WebSocket connections'
 )
 
 websocket_messages_total = Counter(
     'websocket_messages_total',
     'Total number of WebSocket messages',
-    ['color', 'type']
+    ['type']
 )
 
 websocket_connections_active = Gauge(
     'websocket_connections_active',
-    'Number of active WebSocket connections',
-    ['color']
+    'Number of active WebSocket connections'
 )
 
 websocket_errors_total = Counter(
     'websocket_errors_total',
     'Total number of WebSocket errors',
-    ['color', 'error_type']
+    ['error_type']
 )
 
 websocket_message_duration = Histogram(
     'websocket_message_duration_seconds',
-    'Time spent processing WebSocket messages',
-    ['color']
+    'Time spent processing WebSocket messages'
 )
 
 http_requests_total = Counter(
@@ -49,14 +46,12 @@ http_request_duration = Histogram(
 
 app_startup_time = Gauge(
     'app_startup_time_seconds',
-    'Application startup time in seconds',
-    ['color']
+    'Application startup time in seconds'
 )
 
 app_shutdown_time = Gauge(
     'app_shutdown_time_seconds',
-    'Application shutdown time in seconds',
-    ['color']
+    'Application shutdown time in seconds'
 )
 
 # Thread-safe connection tracking
@@ -72,7 +67,7 @@ class ConnectionTracker:
         if not self._initialized:
             try:
                 # Record startup time only after Django is configured
-                app_startup_time.labels(color=settings.APP_COLOR).set(time.time() - self._start_time)
+                app_startup_time.set(time.time() - self._start_time)
                 self._initialized = True
             except Exception:
                 # Django settings not configured yet, skip for now
@@ -83,8 +78,8 @@ class ConnectionTracker:
         with self._lock:
             self._connections.add(connection_id)
             try:
-                websocket_connections_active.labels(color=settings.APP_COLOR).set(len(self._connections))
-                websocket_connections_total.labels(color=settings.APP_COLOR).inc()
+                websocket_connections_active.set(len(self._connections))
+                websocket_connections_total.inc()
             except Exception:
                 # Django settings not configured yet, skip metrics
                 pass
@@ -94,7 +89,7 @@ class ConnectionTracker:
         with self._lock:
             self._connections.discard(connection_id)
             try:
-                websocket_connections_active.labels(color=settings.APP_COLOR).set(len(self._connections))
+                websocket_connections_active.set(len(self._connections))
             except Exception:
                 # Django settings not configured yet, skip metrics
                 pass
@@ -106,7 +101,7 @@ class ConnectionTracker:
     def record_shutdown(self):
         try:
             shutdown_duration = time.time() - self._start_time
-            app_shutdown_time.labels(color=settings.APP_COLOR).set(shutdown_duration)
+            app_shutdown_time.set(shutdown_duration)
         except Exception:
             # Django settings not configured yet, skip metrics
             pass

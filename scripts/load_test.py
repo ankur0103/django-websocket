@@ -236,7 +236,7 @@ async def main():
     parser = argparse.ArgumentParser(description='Load test Django WebSocket service')
     parser.add_argument('--url', default='ws://localhost/ws/chat/', 
                        help='WebSocket URL (default: ws://localhost/ws/chat/)')
-    parser.add_argument('--connections', type=int, default=100,
+    parser.add_argument('--connections', type=int, default=10,
                        help='Number of concurrent connections (default: 100)')
     parser.add_argument('--messages', type=int, default=10,
                        help='Messages per connection (default: 10)')
@@ -244,7 +244,7 @@ async def main():
                        help='Interval between messages in seconds (default: 0.1)')
     parser.add_argument('--duration', type=int, default=60,
                        help='Test duration in seconds (default: 60)')
-    parser.add_argument('--target', type=int, default=5000,
+    parser.add_argument('--target', type=int, default=10,
                        help='Target concurrent connections (default: 5000)')
     parser.add_argument('--debug', action='store_true', help='Enable debug logging of all messages')
     

@@ -26,10 +26,11 @@ CMD ["uvicorn", "app.asgi:application", "--host", "0.0.0.0", "--port", "8000", "
 - **Total capacity**: 2000-8000 concurrent connections (4 workers)
 
 **CPU vs I/O Bound Considerations:**
-- **I/O-bound**: WebSocket connections, Redis operations, network I/O
-- **CPU-bound**: Database queries, message processing, metrics calculations
-- Workers handle I/O-bound operations efficiently
-- Thread pool handles CPU-bound operations
+- **I/O-bound (non-blocking)**: WebSocket connections, Redis operations, network I/O
+- **I/O-bound (blocking)**: Database queries, file operations, external API calls
+- **CPU-bound**: Message processing, metrics calculations, complex computations
+- Workers handle non-blocking I/O operations efficiently
+- Thread pool handles blocking I/O and CPU-bound operations
 
 ### 2. Event Loop (I/O Concurrency)
 
@@ -49,17 +50,24 @@ uvloop==0.19.0
 
 **Default Configuration:**
 - Uvicorn's built-in thread pool for sync operations
-- Handles database queries, file I/O, CPU-intensive tasks
+- Handles blocking I/O (database queries, file I/O) and CPU-intensive tasks
 - Prevents blocking the event loop
 
 **Usage in Code:**
 ```python
 from asgiref.sync import sync_to_async
 
-# CPU-bound operations run in thread pool
+# Blocking operations run in thread pool
+@sync_to_async
+def blocking_database_query():
+    # Database queries are I/O-bound but blocking
+    # This runs in thread pool, not blocking event loop
+    return User.objects.get(id=1)
+
 @sync_to_async
 def cpu_intensive_operation():
-    # This runs in thread pool, not blocking event loop
+    # CPU-bound operations also run in thread pool
+    # Complex calculations, data processing, etc.
     pass
 ```
 
@@ -161,18 +169,18 @@ CHANNEL_LAYERS = {
 
 ## Capacity Planning & Testing
 
-### Empirical Testing
-Use the capacity testing script to determine actual limits:
+### Load Testing
+Use the load testing script to validate performance under concurrent load:
 
 ```bash
-# Test connection capacity
-python scripts/capacity_test.py --url ws://localhost --max 2000 --step 100
+# Test WebSocket performance
+python scripts/load_test.py --url ws://localhost/ws/chat/ --connections 1000 --messages 10 --duration 60
 
-# This will provide empirical data on:
-# - Maximum connections per worker
-# - Memory usage per connection
-# - Performance degradation points
-# - Recommended worker counts
+# This will provide performance data on:
+# - Message throughput and latency
+# - Connection success rates
+# - System behavior under sustained load
+# - Error rates and timeouts
 ```
 
 ### Tuning Recommendations
@@ -205,7 +213,7 @@ deploy:
 ## Best Practices
 
 1. **Keep Workers Async**: Avoid blocking operations in WebSocket consumers
-2. **Use Thread Pool**: For CPU-bound operations like database queries
+2. **Use Thread Pool**: For blocking I/O operations (database queries, file I/O) and CPU-bound tasks
 3. **Monitor Resources**: Track CPU, memory, and connection counts
 4. **Graceful Shutdown**: Handle SIGTERM properly
 5. **Connection Limits**: Set appropriate limits based on resources
