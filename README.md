@@ -43,13 +43,7 @@ pip install -r ../requirements.txt
 redis-server
 ```
 
-### **3. Run Django Migrations**
-```bash
-cd app
-python manage.py migrate
-```
-
-### **4. Start the ASGI Server**
+### **3. Start the ASGI Server**
 ```bash
 cd app
 uvicorn app.asgi:application --host 0.0.0.0 --port 8000 --reload
@@ -60,12 +54,12 @@ uvicorn app.asgi:application --host 0.0.0.0 --port 8000 --reload
 uvicorn app.asgi:application --host 0.0.0.0 --port 8000 --workers 4
 ```
 
-### **5. Test the Application**
+### **4. Test the Application**
 - **WebSocket Test Page**: http://localhost:8000/test/
 - **Health Check**: http://localhost:8000/healthz
 - **Admin Interface**: http://localhost:8000/admin/
 
-### **6. Test WebSocket Connection**
+### **5. Test WebSocket Connection**
 ```bash
 # Command line test
 websocat ws://localhost:8000/ws/chat/
@@ -311,9 +305,6 @@ Connections per Second: 41.56
 ```bash
 # Install dependencies
 make install
-
-# Run migrations
-make migrate
 
 # Start development server
 make dev

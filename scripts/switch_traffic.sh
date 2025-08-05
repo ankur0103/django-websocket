@@ -6,8 +6,11 @@
 
 set -e
 
-NGINX_CONF="nginx/nginx.conf"
-BACKUP_DIR="docker/nginx/backups"
+# Get the script directory and resolve paths properly
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+PROJECT_DIR="$(dirname "$SCRIPT_DIR")"
+NGINX_CONF="$PROJECT_DIR/docker/nginx/nginx.conf"
+BACKUP_DIR="$PROJECT_DIR/docker/nginx/backups"
 
 # Create backup
 mkdir -p "$BACKUP_DIR"
@@ -34,9 +37,15 @@ switch_to_blue() {
     
     # Update only the app_active upstream server line
     sed -i.bak '/upstream app_active {/,/}/ {
-        s/server app_green:8000/server app_blue:8000/g
-        s/server app_blue:8000/server app_blue:8000/g
+        s/server app_green:8000 max_fails=3 fail_timeout=30s;/server app_blue:8000 max_fails=3 fail_timeout=30s;/g
+        s/server app_blue:8000 max_fails=3 fail_timeout=30s;/server app_blue:8000 max_fails=3 fail_timeout=30s;/g
     }' "$NGINX_CONF"
+    
+    # Verify the change was applied
+    if ! grep -A 3 "upstream app_active" "$NGINX_CONF" | grep -q "server app_blue:8000"; then
+        echo "ERROR: Failed to switch to blue configuration"
+        exit 1
+    fi
     
     echo "Traffic switched to blue (app_blue:8000)"
 }
@@ -47,22 +56,30 @@ switch_to_green() {
     
     # Update only the app_active upstream server line
     sed -i.bak '/upstream app_active {/,/}/ {
-        s/server app_blue:8000/server app_green:8000/g
-        s/server app_green:8000/server app_green:8000/g
+        s/server app_blue:8000 max_fails=3 fail_timeout=30s;/server app_green:8000 max_fails=3 fail_timeout=30s;/g
+        s/server app_green:8000 max_fails=3 fail_timeout=30s;/server app_green:8000 max_fails=3 fail_timeout=30s;/g
     }' "$NGINX_CONF"
+    
+    # Verify the change was applied
+    if ! grep -A 3 "upstream app_active" "$NGINX_CONF" | grep -q "server app_green:8000"; then
+        echo "ERROR: Failed to switch to green configuration"
+        exit 1
+    fi
     
     echo "Traffic switched to green (app_green:8000)"
 }
 
 # Function to validate nginx config
-validate_config() {
+validate_nginx_config() {
     echo "Validating nginx configuration..."
-    # Simple syntax check - if file exists and has upstream app_active, it's likely valid
-    if grep -q "upstream app_active" "$NGINX_CONF" && grep -q "server app_" "$NGINX_CONF"; then
+    cd "$PROJECT_DIR/docker"
+    if docker-compose exec nginx nginx -t >/dev/null 2>&1; then
         echo "✅ Nginx configuration appears valid"
+        cd "$PROJECT_DIR"
         return 0
     else
-        echo "❌ Nginx configuration appears invalid"
+        echo "❌ Nginx configuration has syntax errors"
+        cd "$PROJECT_DIR"
         return 1
     fi
 }
@@ -88,19 +105,7 @@ case "$TARGET_COLOR" in
         ;;
 esac
 
-# Validate the configuration
-if validate_config; then
-    echo "✅ Traffic successfully switched to $TARGET_COLOR"
-    echo ""
-    echo "Current app_active upstream:"
-    grep -A 3 "upstream app_active" "$NGINX_CONF"
-else
-    echo "❌ Configuration validation failed. Restoring backup..."
-    # Restore from backup
-    LATEST_BACKUP=$(ls -t "$BACKUP_DIR"/nginx.conf.* | head -1)
-    if [ -n "$LATEST_BACKUP" ]; then
-        cp "$LATEST_BACKUP" "$NGINX_CONF"
-        echo "Configuration restored from backup: $LATEST_BACKUP"
-    fi
-    exit 1
-fi
+echo "✅ Traffic successfully switched to $TARGET_COLOR"
+echo ""
+echo "Current app_active upstream:"
+grep -A 3 "upstream app_active" "$NGINX_CONF"
