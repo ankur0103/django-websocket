@@ -5,6 +5,9 @@ services:
     image: redis:7-alpine
     ports:
       - "6379:6379"
+    volumes:
+      - redis-logs:/var/log/redis
+    command: sh -c "mkdir -p /var/log/redis && chown redis:redis /var/log/redis && redis-server --loglevel notice --logfile /var/log/redis/redis.log"
     healthcheck:
       test: ["CMD", "redis-cli", "ping"]
       interval: 10s
@@ -93,6 +96,7 @@ services:
       - "80:80"
     volumes:
       - ./nginx/nginx.conf:/etc/nginx/nginx.conf:ro
+      - nginx-logs:/var/log/nginx
     depends_on:
       - app_blue
       - app_green
@@ -109,6 +113,7 @@ services:
     volumes:
       - ../monitoring/prometheus.yml:/etc/prometheus/prometheus.yml:ro
       - ../monitoring/alerting/rules.yml:/etc/prometheus/rules.yml:ro
+      - prometheus-logs:/var/log/prometheus
     command:
       - '--config.file=/etc/prometheus/prometheus.yml'
       - '--storage.tsdb.path=/prometheus'
@@ -116,6 +121,8 @@ services:
       - '--web.console.templates=/etc/prometheus/consoles'
       - '--storage.tsdb.retention.time=200h'
       - '--web.enable-lifecycle'
+      - '--log.format=logfmt'
+      - '--log.level=info'
 
   grafana:
     image: grafana/grafana:latest
@@ -124,8 +131,11 @@ services:
     environment:
       - GF_SECURITY_ADMIN_PASSWORD=admin
       - GF_INSTALL_PLUGINS=grafana-clock-panel,grafana-simple-json-datasource
+      - GF_LOG_MODE=file
+      - GF_LOG_LEVEL=info
     volumes:
       - grafana-storage:/var/lib/grafana
+      - grafana-logs:/var/log/grafana
       - ../monitoring/grafana/dashboards:/etc/grafana/provisioning/dashboards:ro
       - ../monitoring/grafana/datasources:/etc/grafana/provisioning/datasources:ro
       - ../monitoring/grafana/datasources/datasource-provider.yml:/etc/grafana/provisioning/datasources/datasource-provider.yml:ro
@@ -134,11 +144,12 @@ services:
     image: grafana/loki:latest
     ports:
       - "3100:3100"
-    command: -config.file=/etc/loki/local-config.yaml
+    command: -config.file=/etc/loki/local-config.yaml -log.level=info
     volumes:
       - ../monitoring/loki-config.yaml:/etc/loki/local-config.yaml:ro
       - loki-data:/loki
       - loki-wal:/wal
+      - loki-logs:/var/log/loki
 
   promtail:
     image: grafana/promtail:latest
@@ -146,6 +157,12 @@ services:
       - "9080:9080"
     volumes:
       - app-logs:/app/logs:ro
+      - nginx-logs:/var/log/nginx:ro
+      - redis-logs:/var/log/redis:ro
+      - prometheus-logs:/var/log/prometheus:ro
+      - grafana-logs:/var/log/grafana:ro
+      - loki-logs:/var/log/loki:ro
+      - promtail-logs:/var/log/promtail
       - ../monitoring/promtail-config.yaml:/etc/promtail/config.yml:ro
     command: -config.file=/etc/promtail/config.yml
     depends_on:
@@ -153,8 +170,14 @@ services:
 
 volumes:
   grafana-storage:
+  grafana-logs:
   loki-data:
   loki-wal:
+  loki-logs:
+  prometheus-logs:
+  redis-logs:
+  nginx-logs:
+  promtail-logs:
   app-logs:
 
 networks:
