@@ -32,7 +32,7 @@ def readyz_view(request):
             "timestamp": time.time()
         })
     except Exception as e:
-        logger.error("Readiness check failed", error=str(e))
+        logger.error("Readiness check failed", error=str(e), request_id=getattr(request, 'request_id', 'unknown'))
         return JsonResponse({
             "status": "not_ready",
             "error": str(e),

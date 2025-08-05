@@ -22,18 +22,19 @@ logger = structlog.get_logger(__name__)
 
 async def send_goodbye_to_all_consumers():
     """Wait for inflight messages, then send goodbye and close to all active consumers."""
-    logger.info("Waiting for inflight messages to finish", in_flight=len(active_requests))
+    shutdown_request_id = str(uuid.uuid4())
+    logger.info("Waiting for inflight messages to finish", in_flight=len(active_requests), request_id=shutdown_request_id)
     timeout = getattr(settings, 'GRACEFUL_SHUTDOWN_TIMEOUT', 10)
     start = asyncio.get_event_loop().time()
     while active_requests and (asyncio.get_event_loop().time() - start) < timeout:
         await asyncio.sleep(0.1)
     if active_requests:
-        logger.warning("Some inflight messages did not finish before shutdown", in_flight=len(active_requests))
+        logger.warning("Some inflight messages did not finish before shutdown", in_flight=len(active_requests), request_id=shutdown_request_id)
     else:
-        logger.info("All inflight messages completed")
+        logger.info("All inflight messages completed", request_id=shutdown_request_id)
 
     goodbye_tasks = []
-    logger.info(f"Active consumers: {active_consumers}")
+    logger.info(f"Active consumers: {active_consumers}", request_id=shutdown_request_id)
     for consumer in list(active_consumers):
         if consumer.is_connected:
             async def goodbye_and_close(consumer):
@@ -41,13 +42,13 @@ async def send_goodbye_to_all_consumers():
                     await send_goodbye_to_consumer(consumer)
                     await consumer.close(code=1001)
                 except Exception as e:
-                    logger.error("Error during goodbye_and_close", connection_id=consumer.connection_id, error=str(e))
+                    logger.error("Error during goodbye_and_close", connection_id=consumer.connection_id, error=str(e), request_id=shutdown_request_id)
             goodbye_tasks.append(asyncio.create_task(goodbye_and_close(consumer)))
     if goodbye_tasks:
         await asyncio.gather(*goodbye_tasks, return_exceptions=True)
-        logger.info("All goodbye messages sent and connections closed")
+        logger.info("All goodbye messages sent and connections closed", request_id=shutdown_request_id)
     else:
-        logger.info("No active consumers to send goodbye to")
+        logger.info("No active consumers to send goodbye to", request_id=shutdown_request_id)
 
 async def send_goodbye_to_consumer(consumer):
     """Send goodbye message to a specific consumer."""
@@ -59,18 +60,20 @@ async def send_goodbye_to_consumer(consumer):
         logger.info(
             "Goodbye message sent",
             connection_id=consumer.connection_id,
-            message_count=consumer.message_count
+            message_count=consumer.message_count,
+            request_id=getattr(consumer, 'request_id', 'unknown')
         )
     except Exception as e:
-        logger.error("Failed to send goodbye message", connection_id=consumer.connection_id, error=str(e))
+        logger.error("Failed to send goodbye message", connection_id=consumer.connection_id, error=str(e), request_id=getattr(consumer, 'request_id', 'unknown'))
 
 def cleanup_old_sessions():
     """Clean up sessions that are no longer active (only very old ones)."""
     global session_store
+    cleanup_request_id = str(uuid.uuid4())
     
     # For now, keep all sessions for reconnection
     # In production, you might want to add timestamp tracking and remove sessions older than X hours
-    logger.info("Session cleanup skipped - keeping all sessions for reconnection", active_sessions=len(session_store))
+    logger.info("Session cleanup skipped - keeping all sessions for reconnection", active_sessions=len(session_store), request_id=cleanup_request_id)
 
 class ChatConsumer(AsyncWebsocketConsumer):
     def __init__(self, *args, **kwargs):
@@ -84,69 +87,72 @@ class ChatConsumer(AsyncWebsocketConsumer):
     async def connect(self):
         """Handle WebSocket connection."""
         try:
-            logger.info("Starting WebSocket connection process")
+            # Generate request_id for this WebSocket connection
+            self.request_id = str(uuid.uuid4())
+            logger.info("Starting WebSocket connection process", request_id=self.request_id)
             
             # Extract session UUID from query parameters for reconnection
             query_string = self.scope.get('query_string', b'').decode()
             if 'session_uuid=' in query_string:
                 self.session_uuid = query_string.split('session_uuid=')[1].split('&')[0]
-                logger.info("Reconnecting client", session_uuid=self.session_uuid)
+                logger.info("Reconnecting client", session_uuid=self.session_uuid, request_id=self.request_id)
                 
                 # Check if session exists and resume counter
                 if self.session_uuid in session_store:
                     self.message_count = session_store[self.session_uuid]
-                    logger.info("Session resumed", session_uuid=self.session_uuid, message_count=self.message_count)
+                    logger.info("Session resumed", session_uuid=self.session_uuid, message_count=self.message_count, request_id=self.request_id)
                 else:
-                    logger.info("Session not found, starting fresh", session_uuid=self.session_uuid)
+                    logger.info("Session not found, starting fresh", session_uuid=self.session_uuid, request_id=self.request_id)
             else:
                 # Generate new session UUID for new connections
                 self.session_uuid = str(uuid.uuid4())
-                logger.info("New client connection", session_uuid=self.session_uuid)
+                logger.info("New client connection", session_uuid=self.session_uuid, request_id=self.request_id)
             
             # Generate connection ID
             self.connection_id = str(uuid.uuid4())
-            logger.info("Generated connection ID", connection_id=self.connection_id)
+            logger.info("Generated connection ID", connection_id=self.connection_id, request_id=self.request_id)
             
             # Clean up old sessions periodically (every 10th connection)
             if len(active_consumers) % 10 == 0:
                 cleanup_old_sessions()
             
             # Accept the connection
-            logger.info("Accepting WebSocket connection", connection_id=self.connection_id)
+            logger.info("Accepting WebSocket connection", connection_id=self.connection_id, request_id=self.request_id)
             await self.accept()
-            logger.info("WebSocket connection accepted", connection_id=self.connection_id)
+            logger.info("WebSocket connection accepted", connection_id=self.connection_id, request_id=self.request_id)
             
             # Send session UUID to client
             await self.send(text_data=json.dumps({
                 "session_uuid": self.session_uuid
             }))
-            logger.info("Session UUID sent to client", session_uuid=self.session_uuid)
+            logger.info("Session UUID sent to client", session_uuid=self.session_uuid, request_id=self.request_id)
             
             self.is_connected = True
-            logger.info("Connection marked as connected", connection_id=self.connection_id)
+            logger.info("Connection marked as connected", connection_id=self.connection_id, request_id=self.request_id)
             
             # Track connection
-            logger.info("Adding to connection tracker", connection_id=self.connection_id)
+            logger.info("Adding to connection tracker", connection_id=self.connection_id, request_id=self.request_id)
             connection_tracker.add_connection(self.connection_id)
             
-            logger.info("Adding to active consumers", connection_id=self.connection_id)
+            logger.info("Adding to active consumers", connection_id=self.connection_id, request_id=self.request_id)
             active_consumers.add(self)
-            logger.info(f"Active consumers after connect: {len(active_consumers)}", connection_id=self.connection_id)
+            logger.info(f"Active consumers after connect: {len(active_consumers)}", connection_id=self.connection_id, request_id=self.request_id)
             
             # Start heartbeat
-            logger.info("Starting heartbeat task", connection_id=self.connection_id)
+            logger.info("Starting heartbeat task", connection_id=self.connection_id, request_id=self.request_id)
             self.heartbeat_task = asyncio.create_task(self._heartbeat_loop())
-            logger.info("Heartbeat task created", connection_id=self.connection_id)
+            logger.info("Heartbeat task created", connection_id=self.connection_id, request_id=self.request_id)
             
             logger.info(
                 "WebSocket connected successfully",
                 connection_id=self.connection_id,
                 session_uuid=self.session_uuid,
-                color=getattr(settings, 'APP_COLOR', 'unknown')
+                color=getattr(settings, 'APP_COLOR', 'unknown'),
+                request_id=self.request_id
             )
             
         except Exception as e:
-            logger.error("WebSocket connection failed", error=str(e), connection_id=getattr(self, 'connection_id', 'unknown'))
+            logger.error("WebSocket connection failed", error=str(e), connection_id=getattr(self, 'connection_id', 'unknown'), request_id=getattr(self, 'request_id', 'unknown'))
             # Safely increment error metric
             try:
                 from monitoring.metrics import websocket_errors_total
@@ -178,7 +184,8 @@ class ChatConsumer(AsyncWebsocketConsumer):
                     connection_id=self.connection_id,
                     message_count=self.message_count,
                     close_code=close_code,
-                    color=getattr(settings, 'APP_COLOR', 'unknown')
+                    color=getattr(settings, 'APP_COLOR', 'unknown'),
+                    request_id=getattr(self, 'request_id', 'unknown')
                 )
             elif close_code == 1012:  # Service restart
                 logger.info(
@@ -186,7 +193,8 @@ class ChatConsumer(AsyncWebsocketConsumer):
                     connection_id=self.connection_id,
                     message_count=self.message_count,
                     close_code=close_code,
-                    color=getattr(settings, 'APP_COLOR', 'unknown')
+                    color=getattr(settings, 'APP_COLOR', 'unknown'),
+                    request_id=getattr(self, 'request_id', 'unknown')
                 )
             elif close_code == 1006:
                 logger.warning(
@@ -194,7 +202,8 @@ class ChatConsumer(AsyncWebsocketConsumer):
                     connection_id=self.connection_id,
                     message_count=self.message_count,
                     close_code=close_code,
-                    color=getattr(settings, 'APP_COLOR', 'unknown')
+                    color=getattr(settings, 'APP_COLOR', 'unknown'),
+                    request_id=getattr(self, 'request_id', 'unknown')
                 )
                 
                 
@@ -204,7 +213,8 @@ class ChatConsumer(AsyncWebsocketConsumer):
                     connection_id=self.connection_id,
                     message_count=self.message_count,
                     close_code=close_code,
-                    color=getattr(settings, 'APP_COLOR', 'unknown')
+                    color=getattr(settings, 'APP_COLOR', 'unknown'),
+                    request_id=getattr(self, 'request_id', 'unknown')
                 )
             
             # Remove from tracking
@@ -213,15 +223,15 @@ class ChatConsumer(AsyncWebsocketConsumer):
             
             # Remove from tracking
             active_consumers.discard(self)
-            logger.info(f"Active consumers after disconnect: {len(active_consumers)}", connection_id=self.connection_id)
+            logger.info(f"Active consumers after disconnect: {len(active_consumers)}", connection_id=self.connection_id, request_id=getattr(self, 'request_id', 'unknown'))
             
             # Keep session in store for potential reconnection
             # Only remove if explicitly requested or after a long timeout
             if self.session_uuid and self.session_uuid in session_store:
-                logger.info("Session kept in store for reconnection", session_uuid=self.session_uuid, message_count=session_store[self.session_uuid])
+                logger.info("Session kept in store for reconnection", session_uuid=self.session_uuid, message_count=session_store[self.session_uuid], request_id=getattr(self, 'request_id', 'unknown'))
             
         except Exception as e:
-            logger.error("Error during disconnect", error=str(e))
+            logger.error("Error during disconnect", error=str(e), request_id=getattr(self, 'request_id', 'unknown'))
             # Safely increment error metric
             try:
                 from monitoring.metrics import websocket_errors_total
@@ -258,7 +268,9 @@ class ChatConsumer(AsyncWebsocketConsumer):
                     "Disconnect requested",
                     connection_id=self.connection_id,
                     message_count=self.message_count,
-                    color=getattr(settings, 'APP_COLOR', 'unknown')
+                    color=getattr(settings, 'APP_COLOR', 'unknown'),
+                    request_id=request_id,
+                    connection_request_id=getattr(self, 'request_id', 'unknown')
                 )
                 return
             
@@ -298,11 +310,13 @@ class ChatConsumer(AsyncWebsocketConsumer):
                 message_count=self.message_count,
                 message_length=len(message),
                 duration=asyncio.get_event_loop().time() - start_time,
-                color=getattr(settings, 'APP_COLOR', 'unknown')
+                color=getattr(settings, 'APP_COLOR', 'unknown'),
+                request_id=request_id,
+                connection_request_id=getattr(self, 'request_id', 'unknown')
             )
             
         except json.JSONDecodeError as e:
-            logger.error("Invalid JSON received", error=str(e))
+            logger.error("Invalid JSON received", error=str(e), request_id=request_id, connection_request_id=getattr(self, 'request_id', 'unknown'))
             # Safely increment error metric
             try:
                 from monitoring.metrics import websocket_errors_total
@@ -318,7 +332,7 @@ class ChatConsumer(AsyncWebsocketConsumer):
             
 
         except Exception as e:
-            logger.error("Error processing message", error=str(e))
+            logger.error("Error processing message", error=str(e), request_id=request_id, connection_request_id=getattr(self, 'request_id', 'unknown'))
             # Safely increment error metric
             try:
                 from monitoring.metrics import websocket_errors_total
@@ -338,7 +352,7 @@ class ChatConsumer(AsyncWebsocketConsumer):
 
     async def _heartbeat_loop(self):
         """Send periodic heartbeat messages."""
-        logger.info("Heartbeat loop started", connection_id=self.connection_id)
+        logger.info("Heartbeat loop started", connection_id=self.connection_id, request_id=getattr(self, 'request_id', 'unknown'))
         try:
             while self.is_connected:
                 try:
@@ -353,30 +367,31 @@ class ChatConsumer(AsyncWebsocketConsumer):
                         logger.debug(
                             "Heartbeat sent",
                             connection_id=self.connection_id,
-                            color=getattr(settings, 'APP_COLOR', 'unknown')
+                            color=getattr(settings, 'APP_COLOR', 'unknown'),
+                            request_id=getattr(self, 'request_id', 'unknown')
                         )
                     else:
-                        logger.info("Connection no longer connected, stopping heartbeat", connection_id=self.connection_id)
+                        logger.info("Connection no longer connected, stopping heartbeat", connection_id=self.connection_id, request_id=getattr(self, 'request_id', 'unknown'))
                         break
                         
                 except asyncio.CancelledError:
-                    logger.info("Heartbeat task cancelled", connection_id=self.connection_id)
+                    logger.info("Heartbeat task cancelled", connection_id=self.connection_id, request_id=getattr(self, 'request_id', 'unknown'))
                     break
                 except Exception as e:
-                    logger.error("Heartbeat error", error=str(e), connection_id=self.connection_id)
+                    logger.error("Heartbeat error", error=str(e), connection_id=self.connection_id, request_id=getattr(self, 'request_id', 'unknown'))
                     break
         except Exception as e:
-            logger.error("Heartbeat loop outer error", error=str(e), connection_id=self.connection_id)
+            logger.error("Heartbeat loop outer error", error=str(e), connection_id=self.connection_id, request_id=getattr(self, 'request_id', 'unknown'))
         finally:
-            logger.info("Heartbeat loop ended", connection_id=self.connection_id)
+            logger.info("Heartbeat loop ended", connection_id=self.connection_id, request_id=getattr(self, 'request_id', 'unknown'))
         
     async def close(self, code=1000):
         """Close the WebSocket connection with specified code."""
         if self.is_connected:
             try:
                 await super().close(code=code)
-                logger.info(f"WebSocket connection closed with code {code}", connection_id=self.connection_id)
+                logger.info(f"WebSocket connection closed with code {code}", connection_id=self.connection_id, request_id=getattr(self, 'request_id', 'unknown'))
             except Exception as e:
-                logger.error(f"Error closing WebSocket connection", connection_id=self.connection_id, error=str(e))
+                logger.error(f"Error closing WebSocket connection", connection_id=self.connection_id, error=str(e), request_id=getattr(self, 'request_id', 'unknown'))
         
  

@@ -14,7 +14,9 @@ class LifespanMiddleware:
                 if message["type"] == "lifespan.startup":
                     await send({"type": "lifespan.startup.complete"})
                 elif message["type"] == "lifespan.shutdown":
-                    logger.info("Lifespan shutdown: sending goodbye to all consumers")
+                    import uuid
+                    shutdown_request_id = str(uuid.uuid4())
+                    logger.info("Lifespan shutdown: sending goodbye to all consumers", request_id=shutdown_request_id)
                     await send_goodbye_to_all_consumers()
                     await send({"type": "lifespan.shutdown.complete"})
                     break
